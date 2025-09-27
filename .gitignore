@@ -209,6 +209,7 @@ __marimo__/
 # Project specific - GraphEm Rapids
 backend_comparison_results/
 *.png
+!images/*.png
 *.jpg
 *.jpeg
 *.gif
