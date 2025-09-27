@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "Fast Geometric Embedding for Node Influence Maximization"
+authors:
+  - family-names: Kolpakov
+    given-names: Alexander
+  - family-names: Rivin
+    given-names: Igor
+doi: 10.48550/arXiv.2506.07435
+date-released: 2025-08-18
+url: https://arxiv.org/abs/2506.07435
+abstract: |
+  Computing classical centrality measures such as betweenness and closeness is computationally expensive on large-scale graphs. In this work, we introduce an efficient force layout algorithm that embeds a graph into a low-dimensional space, where the radial distance from the origin serves as a proxy for various centrality measures. We evaluate our method on multiple graph families and demonstrate strong correlations with degree, PageRank, and paths-based centralities. As an application, it turns out that the proposed embedding allows to find high-influence nodes in a network, and provides a fast and scalable alternative to the standard greedy algorithm.
+keywords:
+  - graph embedding
+  - node influence
+  - centrality measures
+  - network analysis
+  - force layout

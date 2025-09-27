@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include CITATION.cff
+recursive-include docs *.py
+recursive-include examples *.py *.ipynb
+recursive-include tests *.py
+global-exclude data/*

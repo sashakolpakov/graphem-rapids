@@ -73,17 +73,40 @@ rapids = [
 docs = [
     "sphinx>=4.0.0",
     "sphinx_rtd_theme>=1.0.0",
-    "sphinx-autodoc-typehints>=1.12.0"
+    "sphinx-autodoc-typehints>=1.12.0",
+    "myst-parser>=0.17.0"
 ]
 test = [
-    "pytest>=6.0.0"
+    "pytest>=6.0.0",
+    "pytest-cov>=2.12.0",
+    "pytest-xdist>=2.3.0"
+]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.12.0",
+    "pytest-xdist>=2.3.0",
+    "sphinx>=4.0.0",
+    "sphinx_rtd_theme>=1.0.0",
+    "sphinx-autodoc-typehints>=1.12.0",
+    "myst-parser>=0.17.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "flake8>=4.0.0",
+    "mypy>=0.950"
 ]
 all = [
     "cudf-cu12",
     "cuml-cu12",
     "cuvs-cu12",
     "cupy-cuda12x>=10.0.0",
-    "pykeops>=2.1.0"
+    "pykeops>=2.1.0",
+    "sphinx>=4.0.0",
+    "sphinx_rtd_theme>=1.0.0",
+    "sphinx-autodoc-typehints>=1.12.0",
+    "myst-parser>=0.17.0",
+    "pytest>=6.0.0",
+    "pytest-cov>=2.12.0",
+    "pytest-xdist>=2.3.0"
 ]
 
 [project.urls]
@@ -92,6 +115,12 @@ Documentation = "https://sashakolpakov.github.io/graphem-rapids/"
 Repository = "https://github.com/sashakolpakov/graphem-rapids"
 "Bug Reports" = "https://github.com/sashakolpakov/graphem-rapids/issues"
 Paper = "https://arxiv.org/abs/2506.07435"
+"Original GraphEm" = "https://github.com/sashakolpakov/graphem"
+
+[project.scripts]
+graphem-rapids-info = "graphem_rapids.utils.backend_selection:main"
 
 [tool.setuptools]
-packages = {find = {exclude = ["data*", "build*"]}}
+packages = {find = {exclude = ["tests*", "docs*", "examples*", "benchmarks*", "data*", "build*"]}}
+include-package-data = true
+zip-safe = false

@@ -46,7 +46,7 @@ jobs:
         # Start virtual display for headless testing
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         # Run fast tests only (excluding slow, integration, gpu tests)
-        pytest -m "fast and not slow and not gpu" -v --cov=graphem_rapids --cov-report=xml --cov-report=html \
+        pytest -m "fast and not slow and not gpu" --cov=graphem_rapids --cov-report=xml --cov-report=html \
           --maxfail=0
         # Also run a quick smoke test of the examples
         cd examples && python quick_start_rapids.py || echo "Example test completed (may fail due to missing RAPIDS)"
