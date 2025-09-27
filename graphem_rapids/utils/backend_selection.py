@@ -7,6 +7,7 @@ hardware availability, and performance considerations.
 
 import os
 import logging
+import math
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,28 @@ def check_rapids_availability():
     return info
 
 
+def sigmoid(x, offset=0.0, scale=1.0):
+    """
+    Sigmoid function: exp((x-offset)/scale) / (1 + exp((x-offset)/scale))
+
+    Parameters
+    ----------
+    x : float
+        Input value
+    offset : float
+        Offset parameter (default: 0.0)
+    scale : float
+        Scale parameter (default: 1.0)
+
+    Returns
+    -------
+    float
+        Sigmoid output between 0 and 1
+    """
+    exp_term = math.exp((x - offset) / scale)
+    return exp_term / (1 + exp_term)
+
+
 def get_data_complexity_score(config):
     """
     Calculate complexity score based on data characteristics.
@@ -104,11 +127,11 @@ def get_data_complexity_score(config):
     float
         Complexity score (0-1, higher means more complex).
     """
-    # Base complexity from vertex count
-    vertex_score = min(config.n_vertices / 1_000_000, 1.0)
+    # Base complexity from vertex count using sigmoid function
+    vertex_score = sigmoid(config.n_vertices, offset=1_000_000, scale=2**18)
 
     # Dimension penalty (higher dimensions are more expensive)
-    dimension_score = min(config.dimension / 10.0, 1.0)
+    dimension_score = sigmoid(config.dimension, offset=5, scale=1.0)
 
     # Combined score
     complexity = (vertex_score * 0.8) + (dimension_score * 0.2)
