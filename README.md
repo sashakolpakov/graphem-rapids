@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/logo.png" alt="graphem rapids logo" height="240"/>
+  <img src="images/logo.png" alt="graphem rapids logo" height="120"/>
 </p>
 
 <h1 align="center">GraphEm Rapids: High-Performance Graph Embedding</h1>
@@ -19,7 +19,7 @@
   </a>
 </p>
 
-GraphEm Rapids is a high-performance implementation of the GraphEm graph embedding library, with PyTorch and RAPIDS for enhanced scalability and GPU acceleration.
+GraphEm Rapids is a high-performance implementation of the [GraphEm](https://github.com/sashakolpakov/graphem) graph embedding library, with PyTorch and RAPIDS for enhanced scalability and GPU acceleration.
 
 ## Key Features
 
