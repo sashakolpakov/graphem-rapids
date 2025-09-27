@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="graphem rapids logo" height="240"/>
+  <img src="images/logo.png" alt="graphem rapids logo" height="240"/>
 </p>
 
 <h1 align="center">GraphEm Rapids: High-Performance Graph Embedding</h1>
