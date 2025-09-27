@@ -10,6 +10,7 @@ max-locals=42                 # Variables per function
 max-statements=128            # Statements per function
 max-args=16                   # Arguments per function
 max-attributes=32             # Attributes per class
+max-branches=16               # Branches per function
 
 [MESSAGES CONTROL]
 disable=

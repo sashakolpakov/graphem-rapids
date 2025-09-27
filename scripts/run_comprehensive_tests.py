@@ -29,7 +29,7 @@ def run_command(cmd, description=""):
 
     start_time = time.time()
     try:
-        result = subprocess.run(cmd, shell=True, check=True, capture_output=False)
+        _ = subprocess.run(cmd, shell=True, check=True, capture_output=False)
         duration = time.time() - start_time
         print(f"SUCCESS ({duration:.1f}s): {description}")
         return True
@@ -41,6 +41,7 @@ def run_command(cmd, description=""):
 
 
 def main():
+    """Run comprehensive test suite for GraphEm Rapids."""
     parser = argparse.ArgumentParser(description="Run comprehensive GraphEm Rapids tests")
     parser.add_argument("--include-gpu", action="store_true",
                        help="Include GPU tests (requires CUDA)")
@@ -181,9 +182,8 @@ def main():
     if failed_tests == 0:
         print("\nAll tests passed! The codebase is ready for deployment.")
         return 0
-    else:
-        print(f"\n{failed_tests} test suite(s) failed. Please review and fix issues.")
-        return 1
+    print(f"\n{failed_tests} test suite(s) failed. Please review and fix issues.")
+    return 1
 
 
 if __name__ == "__main__":

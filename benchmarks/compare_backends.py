@@ -9,11 +9,11 @@ This script compares the performance of different computational backends
 import time
 import logging
 import argparse
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
 
 from graphem_rapids.generators import (
     erdos_renyi_graph,
@@ -76,11 +76,11 @@ def run_backend_comparison(graph_configs, backends, num_iterations=30, output_di
     test_count = 0
 
     for generator, params, graph_name in graph_configs:
-        logger.info(f"\nTesting graph: {graph_name}")
+        logger.info("\nTesting graph: %s", graph_name)
 
         for backend_name, backend_display in backends:
             test_count += 1
-            logger.info(f"  Backend: {backend_display} ({test_count}/{total_tests})")
+            logger.info("  Backend: %s (%d/%d)", backend_display, test_count, total_tests)
 
             try:
                 # Configure backend-specific parameters
@@ -126,8 +126,8 @@ def run_backend_comparison(graph_configs, backends, num_iterations=30, output_di
                     'error': None
                 }
 
-            except Exception as e:
-                logger.error(f"    Error: {e}")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("    Error: %s", e)
                 result_entry = {
                     'graph_name': graph_name,
                     'backend': backend_display,
@@ -151,7 +151,7 @@ def run_backend_comparison(graph_configs, backends, num_iterations=30, output_di
 
     # Save results
     df.to_csv(output_path / "backend_comparison.csv", index=False)
-    logger.info(f"Results saved to {output_path / 'backend_comparison.csv'}")
+    logger.info("Results saved to %s", output_path / 'backend_comparison.csv')
 
     return df
 
@@ -237,7 +237,7 @@ def create_comparison_plots(df, output_dir="backend_comparison_results"):
         plt.savefig(output_path / "speedup_heatmap.png", dpi=300, bbox_inches='tight')
         plt.close()
 
-    logger.info(f"Plots saved to {output_path}/")
+    logger.info("Plots saved to %s/", output_path)
 
 
 def print_summary_report(df):
@@ -290,7 +290,7 @@ def main():
 
     # Get available backends
     backends = get_available_backends()
-    logger.info(f"Available backends: {[b[1] for b in backends]}")
+    logger.info("Available backends: %s", [b[1] for b in backends])
 
     # Define test graphs
     if args.small_test:
@@ -321,7 +321,7 @@ def main():
     # Print summary
     print_summary_report(df_results)
 
-    logger.info(f"Backend comparison complete! Results saved to {args.output_dir}/")
+    logger.info("Backend comparison complete! Results saved to %s/", args.output_dir)
 
 
 if __name__ == "__main__":

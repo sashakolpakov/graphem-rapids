@@ -9,6 +9,7 @@ automatic backend selection and multiple graph types.
 import sys
 import os
 import time
+import traceback
 
 # Add the parent directory to the path so we can import graphem_rapids
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -81,9 +82,8 @@ def main():
 
         print("\n6. Success! GraphEm Rapids is working correctly.")
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"   Error during computation: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -117,7 +117,7 @@ def main():
                 print(f"      Completed in {total_time:.3f}s")
                 print(f"      Backend: {type(embedder).__name__}")
 
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"      Failed: {e}")
 
     return True

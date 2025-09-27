@@ -1,8 +1,8 @@
 """Pytest configuration and fixtures for Graphem tests."""
 
+import warnings
 import pytest
 import numpy as np
-import warnings
 
 
 def pytest_configure(config):

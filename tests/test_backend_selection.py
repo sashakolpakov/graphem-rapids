@@ -1,8 +1,8 @@
 """Tests for backend selection utilities."""
 
-import pytest
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+import pytest
 from graphem_rapids.utils.backend_selection import (
     BackendConfig,
     get_optimal_backend,

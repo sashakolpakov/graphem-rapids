@@ -170,7 +170,7 @@ class TestEndToEndIntegration:
             assert np.all(np.isfinite(positions))
 
         # Check that different parameters produce different results
-        for i in range(len(embeddings)):
+        for i, _ in enumerate(embeddings):
             for j in range(i + 1, len(embeddings)):
                 # Embeddings should be different (not identical)
                 diff = np.mean(np.abs(embeddings[i] - embeddings[j]))
@@ -296,7 +296,7 @@ class TestCrossBackendConsistency:
         edges = generate_random_regular(n=50, d=4, seed=42)
 
         # Explicit PyTorch
-        embedder_explicit = GraphEmbedder(
+        embedder_explicit = GraphEmbedderPyTorch(
             edges=edges,
             n_vertices=50,
             dimension=2,
@@ -306,7 +306,7 @@ class TestCrossBackendConsistency:
         positions_explicit = embedder_explicit.run_layout(num_iterations=5)
 
         # Auto selection (should pick PyTorch for this size)
-        embedder_auto = GraphEmbedder(
+        embedder_auto = create_graphem(
             edges=edges,
             n_vertices=50,
             dimension=2,

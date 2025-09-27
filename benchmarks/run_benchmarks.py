@@ -351,8 +351,8 @@ class BenchmarkRunner:
                     'eigenvector_correlation': eig_corr,
                     'pagerank_correlation': pr_corr
                 })
-                
-            except Exception as e:
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 tqdm.write(f"\nError processing {dataset_name}: {str(e)}")
                 # Add dummy entry with error
                 results.append({
@@ -478,8 +478,8 @@ class BenchmarkRunner:
                     'graphem_efficiency': graphem_influence / (graphem_time or 1),
                     'greedy_efficiency': greedy_influence / (greedy_time or 1)
                 })
-                
-            except Exception as e:
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 tqdm.write(f"\nError in influence maximization for {name}: {str(e)}")
                 results.append({
                     'graph_type': name,
@@ -1058,7 +1058,7 @@ def main(argv=None):
             on_trace_ready=torch.profiler.tensorboard_trace_handler(profile_dir),
             record_shapes=True,
             with_stack=True
-        ) as prof:
+        ) as _:
             # Run benchmarks
             runner.run_all_benchmarks()
 

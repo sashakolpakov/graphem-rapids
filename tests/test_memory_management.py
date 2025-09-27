@@ -1,7 +1,7 @@
 """Tests for memory management utilities."""
 
+from unittest.mock import patch
 import pytest
-from unittest.mock import patch, MagicMock, mock_open
 from graphem_rapids.utils.memory_management import (
     MemoryManager,
     get_optimal_chunk_size,
@@ -160,7 +160,7 @@ class TestMemoryCleanup:
             cleanup_gpu_memory()
             # If no exception, test passes
             assert True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             pytest.fail(f"cleanup_gpu_memory() raised {type(e).__name__}: {e}")
 
 

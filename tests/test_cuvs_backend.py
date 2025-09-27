@@ -4,9 +4,9 @@ import pytest
 import numpy as np
 
 try:
-    import cudf
-    import cuml
-    import cuvs
+    import cudf  # pylint: disable=unused-import
+    import cuml  # pylint: disable=unused-import
+    import cuvs  # pylint: disable=unused-import
     from graphem_rapids.backends.embedder_cuvs import GraphEmbedderCuVS
     CUVS_AVAILABLE = True
 except ImportError:
