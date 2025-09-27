@@ -347,7 +347,9 @@ class TestPyTorchBackend:
         """Test that PyTorch backend produces reproducible results."""
         edges = generate_random_regular(n=50, d=4, seed=42)
 
-        # Create two identical embedders
+        # Create two identical embedders with same random seed
+        # IMPORTANT: Set seed before creating each embedder instance
+        torch.manual_seed(123)
         embedder1 = GraphEmbedderPyTorch(
             edges=edges,
             n_vertices=50,
@@ -360,7 +362,9 @@ class TestPyTorchBackend:
             batch_size=1024,
             verbose=False
         )
+        embedder1.run_layout(num_iterations=3)
 
+        torch.manual_seed(123)
         embedder2 = GraphEmbedderPyTorch(
             edges=edges,
             n_vertices=50,
@@ -373,32 +377,27 @@ class TestPyTorchBackend:
             batch_size=1024,
             verbose=False
         )
-
-        # Set same random seed for reproducibility
-        torch.manual_seed(123)
-        embedder1.run_layout(num_iterations=3)
-
-        torch.manual_seed(123)
         embedder2.run_layout(num_iterations=3)
 
-        # Results should be similar (allowing for numerical differences)
-        # Layout algorithms can produce equivalent results under transformations (rotation, reflection)
+        # Get final positions
         pos1, pos2 = embedder1.positions, embedder2.positions
 
-        # Check if positions are directly similar
-        if np.allclose(pos1, pos2, rtol=1e-4, atol=1e-4):
-            return
+        # Graph layout algorithms often produce equivalent results under transformations
+        # (rotation, reflection). Test for these equivalent layouts.
 
-        # Check if one is a reflection of the other (common in graph layouts)
-        pos2_reflected = pos2 * np.array([1, -1])  # Reflect y-axis
-        if np.allclose(pos1, pos2_reflected, rtol=1e-4, atol=1e-4):
-            return
+        # Check all possible axis reflections that preserve graph structure
+        transformations = [
+            ("no reflection", pos2 * np.array([1, 1])),     # identity
+            ("x-axis reflection", pos2 * np.array([-1, 1])), # x-axis reflection
+            ("y-axis reflection", pos2 * np.array([1, -1])), # y-axis reflection
+            ("both axes reflection", pos2 * np.array([-1, -1])), # both axes reflection
+        ]
 
-        # Check other reflections
-        pos2_reflected_x = pos2 * np.array([-1, 1])  # Reflect x-axis
-        if np.allclose(pos1, pos2_reflected_x, rtol=1e-4, atol=1e-4):
-            return
+        for transform_name, transformed_pos2 in transformations:
+            if np.allclose(pos1, transformed_pos2, rtol=1e-6, atol=1e-6):
+                return  # Found a valid transformation
 
-        # If none of the transformations match, the test should fail
-        # But let's relax the tolerance for now since graph layouts can be unstable
-        assert np.allclose(pos1, pos2, rtol=1e-2, atol=1e-2), "Positions differ significantly between identical runs"
+        # If no transformation matches, the algorithm is not reproducible
+        pytest.fail("Positions differ significantly between identical runs, "
+                   "even accounting for valid transformations")
+
