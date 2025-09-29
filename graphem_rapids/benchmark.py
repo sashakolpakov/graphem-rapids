@@ -102,16 +102,19 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
 
     # Create embedder - using PyTorch backend for now
     logger.info("Creating embedder...")
+
+    # Convert edges to adjacency matrix
+    adjacency = sp.coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+    adjacency = adjacency.tocsr()
+
     embedder = GraphEmbedderPyTorch(
-        edges=edges,
-        n_vertices=n,
-        dimension=dim,
+        adjacency=adjacency,
+        n_components=dim,
         L_min=L_min,
         k_attr=k_attr,
         k_inter=k_inter,
-        knn_k=knn_k,
-        sample_size=min(sample_size, len(edges)),
-        batch_size=min(batch_size, n),
+        n_neighbors=knn_k,
+        sample_size=sample_size,
         verbose=True,
         **kwargs
     )

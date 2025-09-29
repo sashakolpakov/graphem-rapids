@@ -46,7 +46,8 @@ def get_optimal_chunk_size(
     n_vertices,
     dimension,
     available_memory_gb=None,
-    safety_factor=0.7
+    safety_factor=0.7,
+    backend='torch'
 ):
     """
     Calculate optimal chunk size for memory-efficient processing.
@@ -61,6 +62,8 @@ def get_optimal_chunk_size(
         Available GPU memory in GB. If None, automatically detected.
     safety_factor : float, default=0.7
         Safety factor to avoid OOM (0-1).
+    backend : str, default='torch'
+        Backend type ('torch', 'pykeops', 'cuvs').
 
     Returns
     -------
@@ -75,19 +78,38 @@ def get_optimal_chunk_size(
             # Assume 8GB for CPU systems
             available_memory_gb = 8.0 * safety_factor
 
-    # Estimate memory per vertex (positions + forces + temporary arrays)
-    bytes_per_vertex = dimension * 4 * 5  # float32, multiple arrays
+    # Backend-specific memory estimation
+    if backend == 'pykeops':
+        # PyKeOps uses symbolic computation with lower memory overhead
+        bytes_per_vertex = dimension * 4 * 2  # Less temporary storage needed
+        memory_multiplier = 1.5  # Can handle larger chunks efficiently
+    elif backend == 'cuvs':
+        # CUVS is highly optimized for GPU
+        bytes_per_vertex = dimension * 4 * 3
+        memory_multiplier = 1.2
+    else:  # torch default
+        # Standard torch needs more memory for intermediate computations
+        bytes_per_vertex = dimension * 4 * 5  # float32, multiple arrays
+        memory_multiplier = 1.0
+
     vertices_per_gb = (1024**3) / bytes_per_vertex
 
-    # Calculate chunk size
-    chunk_size = int(available_memory_gb * vertices_per_gb)
+    # Calculate chunk size with backend-specific multiplier
+    chunk_size = int(available_memory_gb * vertices_per_gb * memory_multiplier)
 
-    # Ensure reasonable bounds
-    min_chunk = min(1000, n_vertices)
+    # Backend-specific bounds
+    if backend == 'pykeops':
+        min_chunk = min(2000, n_vertices)  # Larger minimum for efficiency
+    elif backend == 'cuvs':
+        min_chunk = min(1500, n_vertices)
+    else:
+        min_chunk = min(1000, n_vertices)
+
     max_chunk = n_vertices
     chunk_size = max(min_chunk, min(chunk_size, max_chunk))
 
-    logger.debug("Calculated chunk size: %d (available memory: %.1fGB)", chunk_size, available_memory_gb)
+    logger.debug("Calculated chunk size for %s: %d (available memory: %.1fGB)",
+                 backend, chunk_size, available_memory_gb)
 
     return chunk_size
 

@@ -49,27 +49,29 @@ class GraphEmbedderCuVS:
 
     Attributes
     ----------
+    adjacency : scipy.sparse.csr_matrix
+        Sparse adjacency matrix (n_vertices × n_vertices).
     edges : cupy.ndarray
-        Edge list as (n_edges, 2) array.
+        Edge list extracted from adjacency matrix as (n_edges, 2) array.
     n : int
         Number of vertices in the graph.
+    n_components : int
+        Number of components (dimensions) in the embedding space.
     dimension : int
-        Dimension of the embedding space.
+        Dimension of the embedding space (for backward compatibility).
     positions : cupy.ndarray
-        Current vertex positions as (n_vertices, dimension) array.
+        Current vertex positions as (n_vertices, n_components) array.
     """
 
     def __init__(
         self,
-        edges,
-        n_vertices,
-        dimension=2,
+        adjacency,
+        n_components=2,
         L_min=1.0,
         k_attr=0.2,
         k_inter=0.5,
-        knn_k=10,
+        n_neighbors=10,
         sample_size=1024,
-        batch_size=4096,
         index_type='auto',
         dtype=np.float32,
         verbose=True,
@@ -80,24 +82,21 @@ class GraphEmbedderCuVS:
 
         Parameters
         ----------
-        edges : array-like
-            Array of edge pairs (i, j) with i < j.
-        n_vertices : int
-            Number of vertices in the graph.
-        dimension : int, default=2
-            Dimension of the embedding.
+        adjacency : array-like or scipy.sparse matrix
+            Adjacency matrix (n_vertices × n_vertices). Can be sparse or dense.
+            For unweighted graphs, should contain 1s for edges, 0s otherwise.
+        n_components : int, default=2
+            Number of components (dimensions) in the embedding.
         L_min : float, default=1.0
             Minimum spring length.
         k_attr : float, default=0.2
             Attraction force constant.
         k_inter : float, default=0.5
             Intersection repulsion force constant.
-        knn_k : int, default=10
+        n_neighbors : int, default=10
             Number of nearest neighbors for intersection detection.
         sample_size : int, default=1024
             Sample size for kNN computation (larger for cuVS).
-        batch_size : int, default=4096
-            Batch size for processing (larger for cuVS).
         index_type : str, default='auto'
             cuVS index type ('brute_force', 'ivf_flat', 'ivf_pq', 'auto').
         dtype : numpy.dtype, default=np.float32
@@ -120,26 +119,36 @@ class GraphEmbedderCuVS:
             if verbose:
                 logging.basicConfig(level=logging.INFO)
 
+        # Validate and store adjacency matrix
+        adjacency = self._validate_adjacency(adjacency)
+        self.adjacency = adjacency
+
+        # Extract edges from adjacency matrix
+        edges = np.array(np.nonzero(adjacency)).T
+        # For undirected graphs, keep only upper triangular edges to avoid duplicates
+        edges = edges[edges[:, 0] < edges[:, 1]]
+
         # Store parameters
-        self.n = n_vertices
-        self.dimension = dimension
+        self.n = adjacency.shape[0]
+        self.n_vertices = self.n  # For backward compatibility
+        self.dimension = n_components  # For backward compatibility
+        self.n_components = n_components
         self.dtype = dtype
         self.L_min = L_min
         self.k_attr = k_attr
         self.k_inter = k_inter
-        self.knn_k = knn_k
-        self.sample_size = min(sample_size, n_vertices)
-        self.batch_size = batch_size
+        self.knn_k = n_neighbors  # For backward compatibility
+        self.n_neighbors = n_neighbors
+
+        # Calculate number of edges for sample size validation
+        self.n_edges = len(edges)
+        self.sample_size = min(sample_size, self.n_edges) if self.n_edges > 0 else sample_size
+
         self.index_type = index_type
         self.verbose = verbose
 
         # Convert edges to cupy array
-        if isinstance(edges, torch.Tensor):
-            edges_np = edges.detach().cpu().numpy()
-        else:
-            edges_np = np.array(edges)
-
-        self.edges = cp.asarray(edges_np, dtype=cp.int32)
+        self.edges = cp.asarray(edges, dtype=cp.int32)
 
         # Memory management for large datasets
         self.chunk_size = get_optimal_chunk_size(self.n, self.dimension)
@@ -157,6 +166,38 @@ class GraphEmbedderCuVS:
         self.knn_index = None
         self._build_knn_index()
 
+    def _validate_adjacency(self, adjacency):
+        """
+        Validate and convert adjacency matrix to scipy sparse format.
+
+        Parameters
+        ----------
+        adjacency : array-like or scipy.sparse matrix
+            Input adjacency matrix
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix
+            Validated adjacency matrix in CSR format
+        """
+        import scipy.sparse as sp
+
+        # Convert to numpy array if needed
+        if not isinstance(adjacency, (np.ndarray, sp.spmatrix)):
+            adjacency = np.asarray(adjacency)
+
+        # Check if square
+        if adjacency.shape[0] != adjacency.shape[1]:
+            raise ValueError(f"Adjacency matrix must be square, got shape {adjacency.shape}")
+
+        # Convert to sparse format if needed
+        if not sp.issparse(adjacency):
+            adjacency = sp.csr_matrix(adjacency)
+        elif not isinstance(adjacency, sp.csr_matrix):
+            adjacency = adjacency.tocsr()
+
+        return adjacency
+
     def _compute_laplacian_embedding(self):
         """
         Compute the Laplacian embedding using scipy then transfer to GPU.
@@ -168,15 +209,14 @@ class GraphEmbedderCuVS:
         """
         self.logger.info("Computing Laplacian embedding")
 
-        # Use scipy for eigendecomposition (CPU-based, more stable)
-        edges_np = cp.asnumpy(self.edges)
-        row = edges_np[:, 0]
-        col = edges_np[:, 1]
-        data = np.ones(len(edges_np))
+        # Use the adjacency matrix we already have
+        # Make symmetric in case it isn't (for undirected graphs)
+        A = self.adjacency + self.adjacency.transpose()
+        A.data = np.ones_like(A.data)  # Make unweighted for now
 
-        # Build adjacency matrix
-        A = sp.csr_matrix((data, (row, col)), shape=(self.n, self.n))
-        A = A + A.transpose()
+        # Convert sparse array to matrix for scipy compatibility
+        if hasattr(A, 'toarray'):  # It's a sparse array/matrix
+            A = sp.csr_matrix(A)
 
         # Compute normalized Laplacian
         L = laplacian(A, normed=True)
@@ -529,7 +569,7 @@ class GraphEmbedderCuVS:
             midpoints = (self.positions[self.edges[:, 0]] + self.positions[self.edges[:, 1]]) / 2.0
 
             # Find nearest neighbors using cuVS
-            knn_indices, sampled_indices = self._locate_knn_midpoints_cuvs(midpoints, self.knn_k)
+            knn_indices, sampled_indices = self._locate_knn_midpoints_cuvs(midpoints, self.n_neighbors)
 
             # Compute intersection forces
             inter_forces = self._compute_intersection_forces_cuvs(
@@ -668,7 +708,7 @@ class GraphEmbedderCuVS:
 
     def __repr__(self):
         """String representation."""
-        return (f"GraphEmbedderCuVS(n_vertices={self.n}, dimension={self.dimension}, "
+        return (f"GraphEmbedderCuVS(n_vertices={self.n}, n_components={self.n_components}, "
                 f"index_type={self._select_index_type()})")
 
     def __del__(self):

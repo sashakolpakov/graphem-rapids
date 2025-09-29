@@ -76,9 +76,8 @@ else:
 
 
 def create_graphem(
-    edges,
-    n_vertices,
-    dimension=2,
+    adjacency,
+    n_components=2,
     backend=None,
     **kwargs
 ):
@@ -87,12 +86,11 @@ def create_graphem(
 
     Parameters
     ----------
-    edges : array-like
-        Array of edge pairs (i, j).
-    n_vertices : int
-        Number of vertices in the graph.
-    dimension : int, default=2
-        Dimension of the embedding.
+    adjacency : array-like or scipy.sparse matrix
+        Adjacency matrix (n_vertices × n_vertices). Can be sparse or dense.
+        For unweighted graphs, should contain 1s for edges, 0s otherwise.
+    n_components : int, default=2
+        Number of components (dimensions) in the embedding.
     backend : str, optional
         Force specific backend ('pytorch', 'cuvs', 'auto').
         If None, automatically selects optimal backend.
@@ -107,15 +105,19 @@ def create_graphem(
     Examples
     --------
     >>> import graphem_rapids as gr
-    >>> edges = gr.erdos_renyi_graph(n=500, p=0.01)
-    >>> embedder = gr.create_graphem(edges, n_vertices=500, dimension=3)
+    >>> # Generate sparse adjacency matrix
+    >>> adjacency = gr.erdos_renyi_graph(n=500, p=0.01)
+    >>> embedder = gr.create_graphem(adjacency, n_components=3)
     >>> embedder.run_layout(num_iterations=50)
     >>> embedder.display_layout()
     """
+    # Infer n_vertices from adjacency matrix shape
+    n_vertices = adjacency.shape[0]
+
     # Configure backend
     config = BackendConfig(
         n_vertices=n_vertices,
-        dimension=dimension
+        dimension=n_components
     )
     config.force_backend = backend
 
@@ -124,14 +126,14 @@ def create_graphem(
 
     # Create embedder with selected backend
     if optimal_backend == 'cuvs' and _RAPIDS_AVAILABLE and _CUVS_AVAILABLE and GraphEmbedderCuVS is not None:
-        return GraphEmbedderCuVS(edges, n_vertices, dimension, **kwargs)
+        return GraphEmbedderCuVS(adjacency, n_components, **kwargs)
 
     if optimal_backend in ['pytorch', 'cuda'] and _TORCH_AVAILABLE:
-        return GraphEmbedderPyTorch(edges, n_vertices, dimension, **kwargs)
+        return GraphEmbedderPyTorch(adjacency, n_components, **kwargs)
 
     # Fallback to PyTorch CPU
     kwargs['device'] = 'cpu'
-    return GraphEmbedderPyTorch(edges, n_vertices, dimension, **kwargs)
+    return GraphEmbedderPyTorch(adjacency, n_components, **kwargs)
 
 
 def get_backend_info():

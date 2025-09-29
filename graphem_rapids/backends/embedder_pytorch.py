@@ -38,27 +38,25 @@ class GraphEmbedderPyTorch:
         Edge list as (n_edges, 2) tensor.
     n : int
         Number of vertices in the graph.
-    dimension : int
-        Dimension of the embedding space.
+    n_components : int
+        Number of components (dimensions) in the embedding space.
     device : torch.device
         Computing device (CPU or CUDA).
     positions : torch.Tensor
-        Current vertex positions as (n_vertices, dimension) tensor.
+        Current vertex positions as (n_vertices, n_components) tensor.
     """
 
     def __init__(
         self,
-        edges,
-        n_vertices,
-        dimension=2,
+        adjacency,
+        n_components=2,
         device=None,
         dtype=torch.float32,
         L_min=1.0,
         k_attr=0.2,
         k_inter=0.5,
-        knn_k=10,
+        n_neighbors=10,
         sample_size=256,
-        batch_size=1024,
         memory_efficient=True,
         verbose=True,
         logger_instance=None
@@ -68,12 +66,12 @@ class GraphEmbedderPyTorch:
 
         Parameters
         ----------
-        edges : array-like
-            Array of edge pairs (i, j) with i < j.
-        n_vertices : int
-            Number of vertices in the graph.
-        dimension : int, default=2
-            Dimension of the embedding.
+        adjacency : array-like or scipy.sparse matrix
+            Adjacency matrix (n_vertices × n_vertices). Can be sparse or dense.
+            For unweighted graphs, should contain 1s for edges, 0s otherwise.
+            For weighted graphs, contains edge weights (future support).
+        n_components : int, default=2
+            Number of components (dimensions) in the embedding.
         device : str or torch.device, optional
             Computing device. If None, automatically selects GPU if available.
         dtype : torch.dtype, default=torch.float32
@@ -84,12 +82,10 @@ class GraphEmbedderPyTorch:
             Attraction force constant.
         k_inter : float, default=0.5
             Intersection repulsion force constant.
-        knn_k : int, default=10
+        n_neighbors : int, default=10
             Number of nearest neighbors for intersection detection.
         sample_size : int, default=256
             Sample size for kNN computation.
-        batch_size : int, default=1024
-            Batch size for processing.
         memory_efficient : bool, default=True
             Use memory-efficient algorithms for large graphs.
         verbose : bool, default=True
@@ -111,42 +107,191 @@ class GraphEmbedderPyTorch:
             if verbose:
                 logging.basicConfig(level=logging.INFO)
 
+        # Validate and process adjacency matrix
+        adjacency = self._validate_adjacency(adjacency)
+
         # Store parameters
-        self.n = n_vertices
-        self.dimension = dimension
+        self.adjacency = adjacency
+        self.n = adjacency.shape[0]  # Infer n_vertices from adjacency
+        self.n_components = n_components
         self.dtype = dtype
         self.L_min = L_min
         self.k_attr = k_attr
         self.k_inter = k_inter
-        self.knn_k = knn_k
-        self.sample_size = min(sample_size, n_vertices)
-        self.batch_size = batch_size
+        self.n_neighbors = n_neighbors
         self.memory_efficient = memory_efficient
 
         # Validate parameters
-        if dimension <= 0:
-            raise ValueError(f"Dimension must be positive, got {dimension}")
-        if n_vertices <= 0:
-            raise ValueError(f"Number of vertices must be positive, got {n_vertices}")
+        if n_components <= 0:
+            raise ValueError(f"Number of components must be positive, got {n_components}")
         if k_attr < 0:
             raise ValueError(f"Attractive force constant k_attr must be non-negative, got {k_attr}")
         self.verbose = verbose
 
-        # Convert edges to tensor
-        if isinstance(edges, torch.Tensor):
-            self.edges = edges.to(device=self.device, dtype=torch.long)
-        else:
-            self.edges = torch.tensor(np.array(edges), device=self.device, dtype=torch.long)
+        # Extract edges from adjacency matrix
+        edges = self._extract_edges_from_adjacency(adjacency)
 
-        # Memory management
-        self.chunk_size = get_optimal_chunk_size(self.n, self.dimension)
+        # Calculate number of edges for sample_size validation
+        self.n_edges = len(edges)
+
+        # Ensure sample_size doesn't exceed number of edges
+        self.sample_size = min(sample_size, self.n_edges)
+
+        # Convert edges to tensor
+        self.edges = torch.tensor(edges, device=self.device, dtype=torch.long)
+
+        # Memory management - detect backend capability
+        self._has_pykeops = self._check_pykeops_availability()
+        backend_type = 'pykeops' if self._has_pykeops else 'torch'
+        self.chunk_size = get_optimal_chunk_size(self.n, self.n_components, backend=backend_type)
         if self.verbose:
             self.logger.info("Initialized GraphEmbedderPyTorch on %s", self.device)
-            self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.dimension)
+            self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.n_components)
+            self.logger.info("KNN backend: %s", backend_type)
             self.logger.info("Chunk size: %d", self.chunk_size)
 
         # Compute initial embedding
         self._positions = self._compute_laplacian_embedding()
+
+    def _validate_adjacency(self, adjacency):
+        """
+        Validate and convert adjacency matrix to scipy sparse format.
+
+        Parameters
+        ----------
+        adjacency : array-like or scipy.sparse matrix
+            Input adjacency matrix
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix
+            Validated adjacency matrix in CSR format
+        """
+        # Convert to numpy array if needed
+        if not isinstance(adjacency, (np.ndarray, sp.spmatrix)):
+            adjacency = np.asarray(adjacency)
+
+        # Check if square
+        if adjacency.shape[0] != adjacency.shape[1]:
+            raise ValueError(f"Adjacency matrix must be square, got shape {adjacency.shape}")
+
+        # Check for empty graph
+        if adjacency.shape[0] == 0:
+            raise ValueError("Adjacency matrix cannot be empty")
+
+        # Convert to scipy sparse for uniform handling
+        if not sp.issparse(adjacency):
+            adjacency = sp.csr_matrix(adjacency)
+        else:
+            adjacency = adjacency.tocsr()  # Ensure CSR format
+
+        return adjacency
+
+    def _extract_edges_from_adjacency(self, adjacency):
+        """
+        Extract edge list from adjacency matrix for undirected graphs.
+
+        Parameters
+        ----------
+        adjacency : scipy.sparse matrix
+            Adjacency matrix in sparse format
+
+        Returns
+        -------
+        np.ndarray
+            Edge list as (n_edges, 2) array with i < j for undirected graphs
+        """
+        # Get nonzero entries (edges)
+        rows, cols = adjacency.nonzero()
+
+        # For undirected graphs, keep only upper triangle (i < j)
+        # This avoids double-counting edges
+        mask = rows < cols
+        edges = np.column_stack([rows[mask], cols[mask]])
+
+        if self.verbose and len(edges) == 0:
+            self.logger.warning("No edges found in adjacency matrix")
+
+        return edges
+
+    def _check_pykeops_availability(self):
+        """Check if PyKeOps is available and functional."""
+        try:
+            from pykeops.torch import LazyTensor
+            # Test basic functionality
+            test_tensor = torch.randn(2, 3, device=self.device, dtype=self.dtype)
+            x_i = LazyTensor(test_tensor[:1, None, :])
+            y_j = LazyTensor(test_tensor[None, 1:, :])
+            _ = ((x_i - y_j) ** 2).sum(-1)
+            return True
+        except (ImportError, RuntimeError, AttributeError):
+            return False
+
+    def _get_adaptive_chunk_size(self, n_query, n_ref, n_dims, backend):
+        """
+        Calculate adaptive chunk size based on available GPU memory and backend.
+
+        Parameters
+        ----------
+        n_query : int
+            Number of query points.
+        n_ref : int
+            Number of reference points.
+        n_dims : int
+            Number of dimensions.
+        backend : str
+            Backend type ('torch' or 'pykeops').
+
+        Returns
+        -------
+        int
+            Optimal chunk size.
+        """
+        # Start with base chunk size
+        base_chunk_size = self.chunk_size
+
+        # Adaptive chunk sizing based on available GPU memory
+        if self.device.type == 'cuda':
+            try:
+                gpu_mem_free, _ = torch.cuda.mem_get_info()
+                # Estimate memory for k-NN: chunk_size * n_ref * bytes_per_element
+                bytes_per_element = 2 if self.dtype == torch.float16 else 4
+                memory_per_chunk = base_chunk_size * n_ref * bytes_per_element
+
+                # Backend-specific memory usage patterns
+                if backend == 'pykeops':
+                    # PyKeOps is more memory efficient, can use larger chunks
+                    memory_fraction = 0.5
+                    chunk_multiplier = 2.0
+                else:
+                    # Standard torch needs more conservative memory usage
+                    memory_fraction = 0.3 if self.dtype == torch.float32 else 0.4
+                    chunk_multiplier = 1.0
+
+                max_memory = gpu_mem_free * memory_fraction
+                if memory_per_chunk > max_memory:
+                    chunk_size = int(max_memory / (n_ref * bytes_per_element))
+                    chunk_size = max(1000, chunk_size)
+                else:
+                    chunk_size = int(base_chunk_size * chunk_multiplier)
+
+                # With FP16, we can use larger chunks
+                if self.dtype == torch.float16:
+                    chunk_size = min(chunk_size * 2, 100000)
+
+                # Ensure chunk size doesn't exceed query size
+                chunk_size = min(chunk_size, n_query)
+
+                if self.verbose:
+                    self.logger.info(f"Adaptive chunk size for {backend}: {chunk_size} "
+                                   f"(GPU memory: {gpu_mem_free/1024**3:.1f}GB, dtype: {self.dtype})")
+
+                return chunk_size
+            except Exception:
+                # Fallback to base chunk size if memory info unavailable
+                pass
+
+        return base_chunk_size
 
     @property
     def positions(self):
@@ -173,28 +318,27 @@ class GraphEmbedderPyTorch:
         self.logger.info("Computing Laplacian embedding")
 
         with MemoryManager(cleanup_on_exit=True):
-            # Use scipy for eigendecomposition (more stable than PyTorch)
-            edges_np = self.edges.cpu().numpy()
-            row = edges_np[:, 0]
-            col = edges_np[:, 1]
-            data = np.ones(len(edges_np))
+            # Use the adjacency matrix we already have
+            # Make symmetric in case it isn't (for undirected graphs)
+            A = self.adjacency + self.adjacency.transpose()
+            A.data = np.ones_like(A.data)  # Make unweighted for now
 
-            # Build adjacency matrix
-            A = sp.csr_matrix((data, (row, col)), shape=(self.n, self.n))
-            A = A + A.transpose()  # Make symmetric
+            # Convert sparse array to matrix for scipy compatibility
+            if hasattr(A, 'toarray'):  # It's a sparse array/matrix
+                A = sp.csr_matrix(A)
 
             # Compute normalized Laplacian
             L = laplacian(A, normed=True)
 
             # Compute eigenvectors
-            k = self.dimension + 1
+            k = self.n_components + 1
             try:
                 _, eigenvectors = spla.eigsh(L, k, which='SM')
                 lap_embedding = eigenvectors[:, 1:k]  # Skip first eigenvector
             except Exception as e:  # pylint: disable=broad-exception-caught
                 self.logger.warning("Eigendecomposition failed: %s", e)
                 # Fallback to random initialization
-                lap_embedding = np.random.randn(self.n, self.dimension) * 0.1
+                lap_embedding = np.random.randn(self.n, self.n_components) * 0.1
 
             # Convert to tensor
             positions = torch.tensor(
@@ -217,7 +361,7 @@ class GraphEmbedderPyTorch:
         Parameters
         ----------
         midpoints : torch.Tensor
-            Edge midpoints as (n_edges, dimension) tensor.
+            Edge midpoints as (n_edges, n_components) tensor.
         k : int
             Number of nearest neighbors.
 
@@ -258,14 +402,14 @@ class GraphEmbedderPyTorch:
         k
     ):
         """
-        Compute k-nearest neighbors using chunked processing.
+        Compute k-nearest neighbors using chunked processing with intelligent backend selection.
 
         Parameters
         ----------
         query_points : torch.Tensor
-            Query points as (n_query, dimension) tensor.
+            Query points as (n_query, n_components) tensor.
         reference_points : torch.Tensor
-            Reference points as (n_ref, dimension) tensor.
+            Reference points as (n_ref, n_components) tensor.
         k : int
             Number of nearest neighbors.
 
@@ -275,17 +419,138 @@ class GraphEmbedderPyTorch:
             KNN indices as (n_query, k) tensor.
         """
         n_query = query_points.shape[0]
+        n_ref = reference_points.shape[0]
+        n_dims = query_points.shape[1]
 
-        # Determine chunk size based on memory constraints
-        max_chunk_size = min(self.chunk_size, n_query)
+        # Backend selection logic: PyKeOps is slower than PyTorch for high dimensions!
+        # Use PyTorch for high-D, PyKeOps for low-D
+        use_pykeops = (self._has_pykeops and
+                      n_dims < 200 and
+                      self.device.type == 'cuda' and
+                      self.dtype == torch.float32)  # PyKeOps doesn't work well with FP16
 
+        if n_dims >= 200:
+            self.logger.info(f"Using PyTorch for k-NN (high dimension: {n_dims}D)")
+            backend = 'torch'
+        elif use_pykeops:
+            self.logger.info("Using PyKeOps for k-NN (low dimension, GPU available)")
+            backend = 'pykeops'
+        else:
+            self.logger.info("Using PyTorch for k-NN")
+            backend = 'torch'
+
+        # Adaptive chunking based on backend and memory
+        chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, n_dims, backend)
+
+        try:
+            if backend == 'pykeops':
+                return self._compute_knn_pykeops(query_points, reference_points, k, chunk_size)
+            else:
+                return self._compute_knn_torch(query_points, reference_points, k, chunk_size)
+        except (ImportError, RuntimeError, AttributeError) as e:
+            if backend == 'pykeops':
+                if self.verbose:
+                    self.logger.info("PyKeOps failed, falling back to torch.cdist: %s", str(e))
+                chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, n_dims, 'torch')
+                return self._compute_knn_torch(query_points, reference_points, k, chunk_size)
+            else:
+                raise e
+
+    def _compute_knn_pykeops(
+        self,
+        query_points,
+        reference_points,
+        k,
+        chunk_size
+    ):
+        """
+        Compute k-nearest neighbors using PyKeOps for memory efficiency.
+
+        Parameters
+        ----------
+        query_points : torch.Tensor
+            Query points as (n_query, n_components) tensor.
+        reference_points : torch.Tensor
+            Reference points as (n_ref, n_components) tensor.
+        k : int
+            Number of nearest neighbors.
+        chunk_size : int
+            Chunk size for processing.
+
+        Returns
+        -------
+        torch.Tensor
+            KNN indices as (n_query, k) tensor.
+        """
+        try:
+            from pykeops.torch import LazyTensor
+        except ImportError:
+            raise ImportError("PyKeOps not available")
+
+        n_query = query_points.shape[0]
         all_knn_indices = []
 
-        for i in range(0, n_query, max_chunk_size):
-            end_idx = min(i + max_chunk_size, n_query)
+        for i in range(0, n_query, chunk_size):
+            end_idx = min(i + chunk_size, n_query)
             query_chunk = query_points[i:end_idx]
 
-            # Compute distances for this chunk
+            if n_query > 50000:  # Only log for large datasets
+                self.logger.info(f"Processing PyKeOps chunk {i//chunk_size + 1}/{(n_query + chunk_size - 1)//chunk_size}")
+
+            # Create LazyTensors for symbolic computation
+            x_i = LazyTensor(query_chunk[:, None, :])  # (M, 1, D)
+            y_j = LazyTensor(reference_points[None, :, :])  # (1, N, D)
+
+            # Compute squared distances symbolically
+            D_ij = ((x_i - y_j) ** 2).sum(-1)  # (M, N)
+
+            # Find k nearest neighbors
+            knn_indices = D_ij.argKmin(k, dim=1)  # (M, k)
+            all_knn_indices.append(knn_indices)
+
+            # Clear GPU memory periodically
+            if self.device.type == 'cuda' and i % (chunk_size * 10) == 0:
+                torch.cuda.empty_cache()
+
+        return torch.cat(all_knn_indices, dim=0)
+
+    def _compute_knn_torch(
+        self,
+        query_points,
+        reference_points,
+        k,
+        chunk_size
+    ):
+        """
+        Compute k-nearest neighbors using torch.cdist with chunked processing.
+
+        Parameters
+        ----------
+        query_points : torch.Tensor
+            Query points as (n_query, n_components) tensor.
+        reference_points : torch.Tensor
+            Reference points as (n_ref, n_components) tensor.
+        k : int
+            Number of nearest neighbors.
+        chunk_size : int
+            Chunk size for processing.
+
+        Returns
+        -------
+        torch.Tensor
+            KNN indices as (n_query, k) tensor.
+        """
+        n_query = query_points.shape[0]
+        all_knn_indices = []
+
+        for i in range(0, n_query, chunk_size):
+            end_idx = min(i + chunk_size, n_query)
+            query_chunk = query_points[i:end_idx]
+
+            if n_query > 50000:  # Only log for large datasets
+                self.logger.info(f"Processing torch chunk {i//chunk_size + 1}/{(n_query + chunk_size - 1)//chunk_size}")
+
+            # Compute distances for this chunk (MUCH faster for high dimensions!)
             distances = torch.cdist(query_chunk, reference_points, p=2)
 
             # Find k nearest neighbors
@@ -294,6 +559,10 @@ class GraphEmbedderPyTorch:
 
             # Clean up intermediate tensors
             del distances
+
+            # Clear GPU memory periodically
+            if self.device.type == 'cuda' and i % (chunk_size * 10) == 0:
+                torch.cuda.empty_cache()
 
         return torch.cat(all_knn_indices, dim=0)
 
@@ -490,7 +759,7 @@ class GraphEmbedderPyTorch:
             midpoints = (self._positions[self.edges[:, 0]] + self._positions[self.edges[:, 1]]) / 2.0
 
             # Find nearest neighbors for intersection detection
-            knn_indices, sampled_indices = self._locate_knn_midpoints(midpoints, self.knn_k)
+            knn_indices, sampled_indices = self._locate_knn_midpoints(midpoints, self.n_neighbors)
 
             # Compute intersection forces
             inter_forces = self._compute_intersection_forces(
@@ -568,9 +837,9 @@ class GraphEmbedderPyTorch:
         """
         self.logger.info("Displaying layout")
 
-        if self.dimension == 2:
+        if self.n_components == 2:
             self._display_layout_2d(edge_width, node_size, node_colors)
-        elif self.dimension == 3:
+        elif self.n_components == 3:
             self._display_layout_3d(edge_width, node_size, node_colors)
         else:
             raise ValueError("Can only display 2D or 3D layouts")
@@ -675,5 +944,5 @@ class GraphEmbedderPyTorch:
 
     def __repr__(self):
         """String representation of the embedder."""
-        return (f"GraphEmbedderPyTorch(n_vertices={self.n}, dimension={self.dimension}, "
+        return (f"GraphEmbedderPyTorch(n_vertices={self.n}, n_components={self.n_components}, "
                 f"device={self.device}, memory_efficient={self.memory_efficient})")

@@ -20,13 +20,12 @@ class TestEndToEndIntegration:
     def test_complete_pytorch_pipeline(self):
         """Test complete PyTorch pipeline from graph generation to embedding."""
         # Generate a medium-sized graph
-        edges = erdos_renyi_graph(n=100, p=0.05, seed=42)
+        adjacency =erdos_renyi_graph(n=100, p=0.05, seed=42)
 
         # Create embedder
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=100,
-            dimension=3,
+            adjacency=adjacency,
+            n_components=3,
             backend='pytorch',
             L_min=5.0,
             k_attr=0.3,
@@ -52,12 +51,11 @@ class TestEndToEndIntegration:
     @pytest.mark.gpu
     def test_complete_cuda_pipeline(self):
         """Test complete CUDA pipeline."""
-        edges = generate_random_regular(n=80, d=6, seed=42)
+        adjacency =generate_random_regular(n=80, d=6, seed=42)
 
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=80,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='pytorch',
             device='cuda',
             verbose=False
@@ -79,13 +77,12 @@ class TestEndToEndIntegration:
         ]
 
         for graph_name, generator, params in test_cases:
-            edges = generator(**params)
-            n_vertices = params.get('n', len(np.unique(edges)))
+            adjacency =generator(**params)
+            n_vertices = params.get('n', adjacency.shape[0])
 
             embedder = create_graphem(
-                edges=edges,
-                n_vertices=n_vertices,
-                dimension=2,
+                adjacency=adjacency,
+                n_components=2,
                 backend='pytorch',
                 verbose=False
             )
@@ -98,6 +95,8 @@ class TestEndToEndIntegration:
             assert np.all(np.isfinite(positions)), f"Non-finite positions in {graph_name}"
 
             # Check that embedding preserves some graph structure
+            # Extract edges from adjacency matrix
+            edges = np.array(np.nonzero(adjacency)).T
             if len(edges) > 0:
                 edge_lengths = []
                 for i, j in edges[:10]:  # Sample first 10 edges
@@ -113,16 +112,15 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_dimension_consistency(self):
         """Test that embeddings work consistently across dimensions."""
-        edges = erdos_renyi_graph(n=50, p=0.08, seed=42)
+        adjacency =erdos_renyi_graph(n=50, p=0.08, seed=42)
 
         dimensions = [2, 3, 4, 5]
         embeddings = {}
 
         for dim in dimensions:
             embedder = create_graphem(
-                edges=edges,
-                n_vertices=50,
-                dimension=dim,
+                adjacency=adjacency,
+                n_components=dim,
                 backend='pytorch',
                 verbose=False
             )
@@ -143,7 +141,7 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_parameter_sensitivity(self):
         """Test that different parameters produce different but valid embeddings."""
-        edges = generate_random_regular(n=40, d=4, seed=42)
+        adjacency =generate_random_regular(n=40, d=4, seed=42)
 
         parameter_sets = [
             {"L_min": 1.0, "k_attr": 0.1, "k_inter": 0.05},
@@ -155,9 +153,8 @@ class TestEndToEndIntegration:
 
         for i, params in enumerate(parameter_sets):
             embedder = create_graphem(
-                edges=edges,
-                n_vertices=40,
-                dimension=2,
+                adjacency=adjacency,
+                n_components=2,
                 backend='pytorch',
                 **params,
                 verbose=False
@@ -179,28 +176,34 @@ class TestEndToEndIntegration:
     @pytest.mark.integration
     @pytest.mark.fast
     def test_small_graphs(self):
-        """Test integration with very small graphs."""
-        # Triangle
-        edges = np.array([[0, 1], [1, 2], [2, 0]])
+        """Test integration with small graphs."""
+        # 6-vertex graph (two connected triangles) - large enough for k-NN
+        adjacency = np.array([
+            [0, 1, 1, 0, 0, 1],  # vertex 0: connected to 1,2,5
+            [1, 0, 1, 1, 0, 0],  # vertex 1: connected to 0,2,3
+            [1, 1, 0, 0, 1, 0],  # vertex 2: connected to 0,1,4
+            [0, 1, 0, 0, 1, 1],  # vertex 3: connected to 1,4,5
+            [0, 0, 1, 1, 0, 1],  # vertex 4: connected to 2,3,5
+            [1, 0, 0, 1, 1, 0]   # vertex 5: connected to 0,3,4
+        ])
 
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=3,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='pytorch',
-            knn_k=2,  # Small k for small graph
+            n_neighbors=3,  # Safe k for 6-vertex graph
             verbose=False
         )
 
         positions = embedder.run_layout(num_iterations=3)
 
-        assert positions.shape == (3, 2)
+        assert positions.shape == (6, 2)
         assert np.all(np.isfinite(positions))
 
-        # Check that triangle vertices are reasonably spaced
+        # Check that vertices are reasonably spaced
         distances = []
-        for i in range(3):
-            for j in range(i + 1, 3):
+        for i in range(6):
+            for j in range(i + 1, 6):
                 dist = np.linalg.norm(positions[i] - positions[j])
                 distances.append(dist)
 
@@ -211,15 +214,14 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_reproducibility_integration(self):
         """Test end-to-end reproducibility."""
-        edges = generate_scale_free(n=60, seed=42)
+        adjacency =generate_scale_free(n=60, seed=42)
 
         # Run same embedding twice
         results = []
         for _ in range(2):
             embedder = create_graphem(
-                edges=edges,
-                n_vertices=60,
-                dimension=2,
+                adjacency=adjacency,
+                n_components=2,
                 backend='pytorch',
                 L_min=5.0,
                 k_attr=0.3,
@@ -237,12 +239,11 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_memory_efficiency(self):
         """Test that memory-efficient mode works for larger graphs."""
-        edges = erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency =erdos_renyi_graph(n=200, p=0.02, seed=42)
 
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=200,
-            dimension=3,
+            adjacency=adjacency,
+            n_components=3,
             backend='pytorch',
             memory_efficient=True,
             batch_size=64,  # Small batch for memory efficiency
@@ -262,12 +263,11 @@ class TestEndToEndIntegration:
         # Create two separate components
         component1 = np.array([[0, 1], [1, 2], [2, 0]])  # Triangle
         component2 = np.array([[3, 4], [4, 5], [5, 6], [6, 3]])  # Square
-        edges = np.vstack([component1, component2])
+        adjacency =np.vstack([component1, component2])
 
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=7,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='pytorch',
             verbose=False
         )
@@ -293,13 +293,12 @@ class TestCrossBackendConsistency:
     @pytest.mark.slow
     def test_pytorch_vs_auto_selection(self):
         """Test that auto-selection produces reasonable results."""
-        edges = generate_random_regular(n=50, d=4, seed=42)
+        adjacency =generate_random_regular(n=50, d=4, seed=42)
 
         # Explicit PyTorch
         embedder_explicit = GraphEmbedderPyTorch(
-            edges=edges,
-            n_vertices=50,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='pytorch',
             verbose=False
         )
@@ -307,9 +306,8 @@ class TestCrossBackendConsistency:
 
         # Auto selection (should pick PyTorch for this size)
         embedder_auto = create_graphem(
-            edges=edges,
-            n_vertices=50,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='auto',
             verbose=False
         )
@@ -329,14 +327,13 @@ class TestErrorHandlingIntegration:
     @pytest.mark.fast
     def test_invalid_graph_data(self):
         """Test handling of invalid graph data."""
-        # Test with invalid edges
-        invalid_edges = np.array([[0, 1], [1, 0], [2, 5]])  # 5 > n_vertices
+        # Test with invalid adjacency matrix (non-square)
+        invalid_adjacency = np.array([[0, 1], [1, 0], [0, 1]])  # 3x2 matrix (non-square)
 
         with pytest.raises((ValueError, IndexError)):
             embedder = create_graphem(
-                edges=invalid_edges,
-                n_vertices=3,
-                dimension=2,
+                adjacency=invalid_adjacency,
+                n_components=2,
                 backend='pytorch',
                 verbose=False
             )
@@ -346,14 +343,14 @@ class TestErrorHandlingIntegration:
     @pytest.mark.fast
     def test_empty_graph_handling(self):
         """Test handling of empty graphs."""
-        empty_edges = np.array([]).reshape(0, 2)
+        # Empty adjacency matrix (all zeros - no edges)
+        empty_adjacency = np.zeros((5, 5))
 
         # Empty graphs should raise ValueError as invalid input
         with pytest.raises((ValueError, RuntimeError)):
             embedder = create_graphem(
-                edges=empty_edges,
-                n_vertices=5,  # 5 isolated vertices
-                dimension=2,
+                adjacency=empty_adjacency,
+                n_components=2,
                 backend='pytorch',
                 verbose=False
             )
@@ -364,13 +361,12 @@ class TestErrorHandlingIntegration:
     @pytest.mark.fast
     def test_parameter_edge_cases(self):
         """Test parameter edge cases."""
-        edges = generate_random_regular(n=20, d=3, seed=42)
+        adjacency =generate_random_regular(n=20, d=3, seed=42)
 
         # Very small parameters
         embedder = create_graphem(
-            edges=edges,
-            n_vertices=20,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             backend='pytorch',
             L_min=0.1,
             k_attr=0.01,
