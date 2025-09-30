@@ -167,10 +167,10 @@ class TestEndToEndIntegration:
             assert np.all(np.isfinite(positions))
 
         # Check that different parameters produce different results
-        for i, _ in enumerate(embeddings):
+        for i, embedding_i in enumerate(embeddings):
             for j in range(i + 1, len(embeddings)):
                 # Embeddings should be different (not identical)
-                diff = np.mean(np.abs(embeddings[i] - embeddings[j]))
+                diff = np.mean(np.abs(embedding_i - embeddings[j]))
                 assert diff > 1e-3, f"Parameters {i} and {j} produce too similar results"
 
     @pytest.mark.integration
@@ -214,9 +214,7 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_reproducibility_integration(self):
         """Test end-to-end reproducibility."""
-        import torch
-
-        adjacency =generate_scale_free(n=60, seed=42)
+        adjacency = generate_scale_free(n=60, seed=42)
 
         # Run same embedding twice with consistent seeding
         results = []
@@ -283,7 +281,7 @@ class TestEndToEndIntegration:
         edges = np.vstack([component1, component2])
 
         # Convert to adjacency matrix
-        import scipy.sparse as sp
+        import scipy.sparse as sp  # pylint: disable=import-outside-toplevel
         n_vertices = 12
         adjacency = sp.csr_matrix(
             (np.ones(len(edges)), (edges[:, 0], edges[:, 1])),

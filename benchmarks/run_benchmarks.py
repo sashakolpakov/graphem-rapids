@@ -266,24 +266,24 @@ class BenchmarkRunner:
                     # Re-index nodes to be consecutive integers
                     G_cc = nx.convert_node_labels_to_integers(G_cc)
 
-                    # Extract edges from the largest component
-                    edges = G_cc.edges
+                    # Update for largest component
                     n_vertices = len(largest_cc)
-                
+
+                # Convert to adjacency matrix
+                adjacency = nx.to_scipy_sparse_array(G_cc, format='csr')
+
                 # Run the embedding
                 tqdm.write(f"\nRunning layout for {dataset_name}...")
                 start_time = time.time()
                 # Create and run embedder
                 embedder = GraphEmbedderPyTorch(
-                    edges=edges,
-                    n_vertices=n_vertices,
+                    adjacency=adjacency,
                     n_components=3,
                     L_min=4.0,
                     k_attr=0.5,
                     k_inter=0.1,
                     n_neighbors=min(15, n_vertices // 10),
-                    sample_size=min(512, len(edges)),
-                    batch_size=min(1024, len(edges)),
+                    sample_size=min(512, adjacency.nnz // 2),
                     verbose=False
                 )
                 
@@ -389,36 +389,35 @@ class BenchmarkRunner:
             tqdm.write(f"\nTesting influence maximization on {name}...")
             
             try:
-                # Generate graph
-                edges = generator(**params)
-                
+                # Generate graph (returns adjacency matrix)
+                adjacency = generator(**params)
+
+                # Extract edges from adjacency matrix
+                edge_list = list(zip(*adjacency.nonzero()))
+                edge_list = [(int(i), int(j)) for i, j in edge_list if i < j]
+
                 # Determine number of vertices
-                if len(edges) > 0:
-                    n = int(max(np.max(edges) + 1, params.get('n', 0)))
-                else:
-                    n = params.get('n', 0)
-                
+                n = adjacency.shape[0]
+
                 # Create NetworkX graph
                 G = nx.Graph()
                 G.add_nodes_from(range(n))
-                G.add_edges_from(edges)
-                
+                G.add_edges_from(edge_list)
+
                 # Parameters for influence maximization
                 k = 10  # Number of seed nodes
                 p = 0.1  # Propagation probability
-                
+
                 # Graphem-based seed selection
                 tqdm.write("\nRunning GraphEm seed selection...")
                 embedder = GraphEmbedderPyTorch(
-                    edges=edges,
-                    n_vertices=n,
+                    adjacency=adjacency,
                     n_components=3,
                     L_min=10.0,
                     k_attr=0.5,
                     k_inter=0.1,
                     n_neighbors=15,
-                    sample_size=min(512, len(edges)),
-                    batch_size=min(1024, n),
+                    sample_size=min(512, adjacency.nnz // 2),
                     verbose=False
                 )
                 

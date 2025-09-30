@@ -45,15 +45,19 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     
     # Generate graph
     adjacency = generator(**params)
-    
+
+    # Extract edges from adjacency matrix
+    edges = list(zip(*adjacency.nonzero()))
+    edges = [(int(i), int(j)) for i, j in edges if i < j]
+
     # Determine number of vertices
-    if adjacency.nnz//2 > 0:
-        n = int(max(np.max(edges) + 1, params.get('n', 0)))
+    if len(edges) > 0:
+        n = int(max(max(i for i, j in edges), max(j for i, j in edges)) + 1)
     else:
         n = params.get('n', 0)
-    
+
     print(f"Generated graph with {n} vertices and {adjacency.nnz//2} edges")
-    
+
     # Create NetworkX graph for visualization
     G = nx.Graph()
     G.add_nodes_from(range(n))
@@ -77,8 +81,7 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
-        adjacency=edges,
-        n_vertices=n,
+        adjacency=adjacency,
         n_components=dim,
         L_min=10.0,
         k_attr=0.5,

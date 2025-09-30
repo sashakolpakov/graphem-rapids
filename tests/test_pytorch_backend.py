@@ -8,7 +8,7 @@ from graphem_rapids.generators import erdos_renyi_graph, generate_random_regular
 
 # Test if PyKeOps is available for conditional tests
 try:
-    from pykeops.torch import LazyTensor
+    import pykeops.torch
     PYKEOPS_AVAILABLE = True
 except ImportError:
     PYKEOPS_AVAILABLE = False
@@ -370,7 +370,7 @@ class TestPyTorchBackend:
             ("both axes reflection", pos2 * np.array([-1, -1])), # both axes reflection
         ]
 
-        for transform_name, transformed_pos2 in transformations:
+        for _, transformed_pos2 in transformations:
             if np.allclose(pos1, transformed_pos2, rtol=1e-6, atol=1e-6):
                 return  # Found a valid transformation
 
@@ -397,12 +397,12 @@ class TestPyTorchBackend:
         if has_pykeops:
             # Should be able to create LazyTensor without error
             try:
-                from pykeops.torch import LazyTensor
+                from pykeops.torch import LazyTensor  # pylint: disable=import-outside-toplevel
                 test_tensor = torch.randn(2, 3, device=embedder.device, dtype=embedder.dtype)
                 x_i = LazyTensor(test_tensor[:1, None, :])
                 y_j = LazyTensor(test_tensor[None, 1:, :])
                 _ = ((x_i - y_j) ** 2).sum(-1)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 pytest.fail(f"PyKeOps detected as available but failed basic test: {e}")
 
     @pytest.mark.fast
@@ -483,8 +483,8 @@ class TestPyTorchBackend:
         )
 
         # Test chunk size adaptation for both backends
-        torch_chunk_size = embedder._get_adaptive_chunk_size(100, 200, 2, 'torch')
-        pykeops_chunk_size = embedder._get_adaptive_chunk_size(100, 200, 2, 'pykeops')
+        torch_chunk_size = embedder._get_adaptive_chunk_size(100, 200, 'torch')
+        pykeops_chunk_size = embedder._get_adaptive_chunk_size(100, 200, 'pykeops')
 
         assert torch_chunk_size > 0
         assert pykeops_chunk_size > 0
@@ -582,7 +582,7 @@ class TestPyTorchBackend:
                 assert knn_indices.shape == (10, 5)
                 assert torch.all(knn_indices >= 0)
                 assert torch.all(knn_indices < 20)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 pytest.fail(f"PyKeOps k-NN computation failed: {e}")
 
     @pytest.mark.fast

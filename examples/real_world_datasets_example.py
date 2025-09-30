@@ -77,26 +77,28 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     start_time = time.time()
     vertices, edges = load_dataset(dataset_name)
     n_vertices = len(vertices)
+    n_edges = len(edges)
     load_time = time.time() - start_time
-    
-    print(f"Loaded dataset with {n_vertices:,} vertices and {adjacency.nnz//2:,} edges in {load_time:.2f}s")
+
+    print(f"Loaded dataset with {n_vertices:,} vertices and {n_edges:,} edges in {load_time:.2f}s")
     
     # Sample the graph if needed
     if sample_size is not None and sample_size < n_vertices:
         print(f"Sampling {sample_size:,} vertices from the graph...")
         sampled_vertices = np.random.choice(vertices, sample_size, replace=False)
-        
+
         # Filter edges that contain sampled vertices
         sampled_edges = []
         for u, v in edges:
             if u in sampled_vertices and v in sampled_vertices:
                 sampled_edges.append((u, v))
-        
+
         vertices = sampled_vertices
         edges = np.array(sampled_edges)
         n_vertices = sample_size
-        
-        print(f"Sampled graph has {n_vertices:,} vertices and {adjacency.nnz//2:,} edges")
+        n_edges = len(edges)
+
+        print(f"Sampled graph has {n_vertices:,} vertices and {n_edges:,} edges")
     
     # Create NetworkX graph for analysis
     G = nx.Graph()
@@ -108,8 +110,8 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
                                            label_attribute=None)
     
     # Analyze graph properties
-    density = 2 * adjacency.nnz//2 / (n_vertices * (n_vertices - 1))
-    avg_degree = 2 * adjacency.nnz//2 / n_vertices
+    density = 2 * n_edges / (n_vertices * (n_vertices - 1)) if n_vertices > 1 else 0
+    avg_degree = 2 * n_edges / n_vertices if n_vertices > 0 else 0
     
     print("Graph statistics:")
     print(f"- Density: {density:.6f}")
@@ -161,10 +163,11 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     
     # Create and run embedder
     print(f"Creating embedding in dimension {dim}...")
+    # Convert to adjacency matrix
+    adjacency = nx.to_scipy_sparse_array(G_cc, format='csr')
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
-        adjacency=G_cc.edges,
-        n_vertices=G_cc.number_of_nodes(),
+        adjacency=adjacency,
         n_components=dim,
         L_min=4.0,
         k_attr=0.5,
@@ -278,14 +281,15 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         start_time = time.time()
         vertices, edges = load_dataset(dataset_name)
         n_vertices = len(vertices)
+        n_edges = len(edges)
         load_time = time.time() - start_time
-        
-        print(f"Loaded dataset with {n_vertices:,} vertices and {adjacency.nnz//2:,} edges in {load_time:.2f}s")
+
+        print(f"Loaded dataset with {n_vertices:,} vertices and {n_edges:,} edges in {load_time:.2f}s")
         
         # Sample the graph
         print(f"Sampling {sample_size:,} vertices from the graph...")
         sampled_vertices = np.random.choice(vertices, sample_size, replace=False)
-        
+
         # Filter edges that contain sampled vertices
         sampled_edges = []
         for u, v in edges:
@@ -295,8 +299,9 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         vertices = sampled_vertices
         edges = np.array(sampled_edges)
         n_vertices = sample_size
-        
-        print(f"Sampled graph has {n_vertices:,} vertices and {adjacency.nnz//2:,} edges")
+        n_edges = len(edges)
+
+        print(f"Sampled graph has {n_vertices:,} vertices and {n_edges:,} edges")
         
         # Create NetworkX graph for analysis
         G = nx.Graph()
@@ -308,8 +313,8 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
                                                label_attribute=None)
         
         # Analyze graph properties
-        density = 2 * adjacency.nnz//2 / (n_vertices * (n_vertices - 1))
-        avg_degree = 2 * adjacency.nnz//2 / n_vertices
+        density = 2 * n_edges / (n_vertices * (n_vertices - 1)) if n_vertices > 1 else 0
+        avg_degree = 2 * n_edges / n_vertices if n_vertices > 0 else 0
         
         # Get largest connected component
         largest_cc = max(nx.connected_components(G), key=len)
@@ -325,9 +330,9 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
             # Re-index nodes to be consecutive integers
             G_cc = nx.convert_node_labels_to_integers(G_cc)
 
-            # Extract edges from the largest component
-            edges = G_cc.edges
+            # Update counts for the largest component
             n_vertices = len(largest_cc)
+            n_edges = G_cc.number_of_edges()
         
         # Compute average shortest path length if manageable
         try:
@@ -346,17 +351,19 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         
         # Compute clustering coefficient
         avg_clustering = nx.average_clustering(G_cc)
-        
+
+        # Convert to adjacency matrix
+        adjacency = nx.to_scipy_sparse_array(G_cc, format='csr')
+
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            adjacency=edges,
-            n_vertices=n_vertices,
+            adjacency=adjacency,
             n_components=dim,
             L_min=4.0,
             k_attr=0.5,
             k_inter=0.1,
             n_neighbors=min(15, n_vertices // 10),
-            sample_size=min(512, adjacency.nnz//2),
+            sample_size=min(512, n_edges),
             verbose=False
         )
         
@@ -368,7 +375,7 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         results.append({
             'dataset': dataset_name,
             'vertices': n_vertices,
-            'edges': adjacency.nnz//2,
+            'edges': n_edges,
             'density': density,
             'avg_degree': avg_degree,
             'lcc_size': lcc_size,

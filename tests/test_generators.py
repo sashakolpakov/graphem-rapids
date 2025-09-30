@@ -3,7 +3,6 @@
 import pytest
 import numpy as np
 import scipy.sparse as sp
-import networkx as nx
 from graphem_rapids.generators import (
     erdos_renyi_graph,
     generate_random_regular,

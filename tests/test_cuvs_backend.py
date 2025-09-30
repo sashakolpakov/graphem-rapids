@@ -102,7 +102,7 @@ class TestCuVSBackend:
     def test_cuvs_disconnected_graph(self):
         """Test cuVS backend with disconnected graph."""
         # Create two disconnected hexagons (12 vertices to meet n_neighbors requirement)
-        import scipy.sparse as sp
+        import scipy.sparse as sp  # pylint: disable=import-outside-toplevel
         edges = np.array([
             [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0],  # Hexagon 1
             [6, 7], [7, 8], [8, 9], [9, 10], [10, 11], [11, 6]  # Hexagon 2

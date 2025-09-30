@@ -50,15 +50,17 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         print(f"\n{'-'*25}")
         print(f"Random Regular Graph with degree d={d}")
         print(f"{'-'*25}")
-        
+
         # Generate graph
         start_time = time.time()
         adjacency = generate_random_regular(n=n, d=d, seed=42)
         gen_time = time.time() - start_time
-        
+
         print(f"Generated graph with {n} vertices, {adjacency.nnz//2} edges in {gen_time:.2f}s")
-        
+
         # Create NetworkX graph for analysis
+        edges = list(zip(*adjacency.nonzero()))
+        edges = [(int(i), int(j)) for i, j in edges if i < j]
         G = nx.Graph()
         G.add_nodes_from(range(n))
         G.add_edges_from(edges)
@@ -98,8 +100,7 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            adjacency=edges,
-            n_vertices=n,
+            adjacency=adjacency,
             n_components=dim,
             L_min=10.0,
             k_attr=0.5,
@@ -212,15 +213,17 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         print(f"\n{'-'*25}")
         print(f"Random Regular Graph with size n={n}")
         print(f"{'-'*25}")
-        
+
         # Generate graph
         start_time = time.time()
         adjacency = generate_random_regular(n=n, d=degree, seed=42)
         gen_time = time.time() - start_time
-        
+
         print(f"Generated graph with {n} vertices, {adjacency.nnz//2} edges in {gen_time:.2f}s")
-        
+
         # Create NetworkX graph for analysis
+        edges = list(zip(*adjacency.nonzero()))
+        edges = [(int(i), int(j)) for i, j in edges if i < j]
         G = nx.Graph()
         G.add_nodes_from(range(n))
         G.add_edges_from(edges)
@@ -259,8 +262,7 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            adjacency=edges,
-            n_vertices=n,
+            adjacency=adjacency,
             n_components=dim,
             L_min=10.0,
             k_attr=0.5,
