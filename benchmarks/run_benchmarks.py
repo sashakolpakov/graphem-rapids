@@ -464,8 +464,8 @@ class BenchmarkRunner:
                 results.append({
                     'graph_type': name,
                     'vertices': n,
-                    'edges': len(edges),
-                    'avg_degree': 2 * len(edges) / n,
+                    'edges': len(edge_list),
+                    'avg_degree': 2 * len(edge_list) / n,
                     'graphem_influence': graphem_influence,
                     'greedy_influence': greedy_influence,
                     'random_influence': random_influence,

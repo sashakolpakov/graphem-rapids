@@ -8,7 +8,7 @@ from graphem_rapids.generators import erdos_renyi_graph, generate_random_regular
 
 # Test if PyKeOps is available for conditional tests
 try:
-    import pykeops.torch
+    import pykeops.torch  # noqa: F401 - used to determine PYKEOPS_AVAILABLE
     PYKEOPS_AVAILABLE = True
 except ImportError:
     PYKEOPS_AVAILABLE = False

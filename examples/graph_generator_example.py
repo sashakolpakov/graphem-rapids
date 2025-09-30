@@ -6,7 +6,6 @@ This script demonstrates how to generate and visualize different types of graphs
 with a focus on the random regular graphs and other recently added generators.
 """
 
-import numpy as np
 import networkx as nx
 
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch

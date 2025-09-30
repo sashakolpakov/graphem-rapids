@@ -20,6 +20,27 @@ from graphem_rapids.datasets import (
 )
 
 
+def _sample_graph_if_needed(vertices, edges, sample_size, n_vertices, n_edges):
+    """Helper function to sample graph if needed."""
+    if sample_size is not None and sample_size < n_vertices:
+        print(f"Sampling {sample_size:,} vertices from the graph...")
+        sampled_vertices = np.random.choice(vertices, sample_size, replace=False)
+
+        # Filter edges that contain sampled vertices
+        sampled_edges = []
+        for u, v in edges:
+            if u in sampled_vertices and v in sampled_vertices:
+                sampled_edges.append((u, v))
+
+        vertices = sampled_vertices
+        edges = np.array(sampled_edges)
+        n_vertices = sample_size
+        n_edges = len(edges)
+
+        print(f"Sampled graph has {n_vertices:,} vertices and {n_edges:,} edges")
+    return vertices, edges, n_vertices, n_edges
+
+
 def print_available_datasets():
     """
     Print information about all available datasets.
@@ -57,7 +78,7 @@ def print_available_datasets():
 def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     """
     Download, load, and analyze a dataset.
-    
+
     Parameters:
         dataset_name: str
             Name of the dataset to analyze
@@ -71,7 +92,7 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     print(f"\n{'='*75}")
     print(f"Analyzing dataset: {dataset_name}")
     print(f"{'='*75}")
-    
+
     # Load the dataset
     print(f"Loading dataset {dataset_name}...")
     start_time = time.time()
@@ -81,24 +102,11 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     load_time = time.time() - start_time
 
     print(f"Loaded dataset with {n_vertices:,} vertices and {n_edges:,} edges in {load_time:.2f}s")
-    
+
     # Sample the graph if needed
-    if sample_size is not None and sample_size < n_vertices:
-        print(f"Sampling {sample_size:,} vertices from the graph...")
-        sampled_vertices = np.random.choice(vertices, sample_size, replace=False)
-
-        # Filter edges that contain sampled vertices
-        sampled_edges = []
-        for u, v in edges:
-            if u in sampled_vertices and v in sampled_vertices:
-                sampled_edges.append((u, v))
-
-        vertices = sampled_vertices
-        edges = np.array(sampled_edges)
-        n_vertices = sample_size
-        n_edges = len(edges)
-
-        print(f"Sampled graph has {n_vertices:,} vertices and {n_edges:,} edges")
+    vertices, edges, n_vertices, n_edges = _sample_graph_if_needed(
+        vertices, edges, sample_size, n_vertices, n_edges
+    )
     
     # Create NetworkX graph for analysis
     G = nx.Graph()
