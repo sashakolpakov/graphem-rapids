@@ -190,7 +190,7 @@ greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
 
 Run the test suite:
 ```bash
-pytest tests/ -v
+pytest
 ```
 
 Test specific backends:
@@ -268,13 +268,6 @@ embedder = gr.GraphEmbedderCuVS(
 # - 'ivf_flat': Good balance for 100K-1M vertices
 # - 'ivf_pq': Memory-efficient for > 1M vertices
 ```
-
-## Documentation
-
-- [API Reference](https://sashakolpakov.github.io/graphem-rapids/)
-- [User Guide](docs/user_guide.md)
-- [Backend Selection Guide](docs/backend_selection.md)
-- [Performance Tuning](docs/performance.md)
 
 ## License
 

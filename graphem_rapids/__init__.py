@@ -248,7 +248,7 @@ def _show_backend_info():
 
 
 # Show info on import unless in testing environment
-if not os.environ.get('GRAPHEM_RAPIDS_QUIET'):
+if os.environ.get('GRAPHEM_RAPIDS_QUIET', 'false').lower() != 'true':
     try:
         _show_backend_info()
     except Exception:  # pylint: disable=broad-exception-caught
