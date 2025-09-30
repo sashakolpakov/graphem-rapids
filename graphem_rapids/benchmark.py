@@ -5,6 +5,7 @@ Benchmark functionality for GraphEm Rapids.
 import time
 import logging
 import numpy as np
+import scipy.sparse as sp
 import networkx as nx
 from scipy import stats
 
@@ -15,22 +16,28 @@ logger = logging.getLogger(__name__)
 
 
 def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, k_inter=0.1,
-                 knn_k=15, sample_size=512, batch_size=1024, num_iterations=40, backend='pytorch', **kwargs):
+                 n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
     """
     Run a benchmark on the given graph using GraphEm Rapids.
 
     Parameters
     ----------
     graph_generator : callable
-        Function to generate a graph
+        Function to generate a graph (returns sparse adjacency matrix)
     graph_params : dict
         Parameters for the graph generator
     dim : int, default=3
-        Embedding dimension
-    L_min, k_attr, k_inter, knn_k : float
-        GraphEmbedder parameters
-    sample_size, batch_size : int
-        Batch parameters for kNN search
+        Number of embedding components (dimensions)
+    L_min : float, default=10.0
+        Minimum spring length parameter
+    k_attr : float, default=0.5
+        Attraction force constant
+    k_inter : float, default=0.1
+        Intersection repulsion force constant
+    n_neighbors : int, default=15
+        Number of nearest neighbors for intersection detection
+    sample_size : int, default=512
+        Sample size for kNN computation
     num_iterations : int, default=40
         Number of layout iterations
     backend : str, default='pytorch'
@@ -113,7 +120,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
         L_min=L_min,
         k_attr=k_attr,
         k_inter=k_inter,
-        n_neighbors=knn_k,
+        n_neighbors=n_neighbors,
         sample_size=sample_size,
         verbose=True,
         **kwargs
@@ -137,7 +144,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
         'avg_degree': 2 * m / n if n > 0 else 0.0,
         'layout_time': layout_time,
         'graph_type': graph_generator.__name__,
-        'dimension': dim,
+        'n_components': dim,
         'backend': backend,
         'radii': radii,
         'positions': positions,
@@ -157,22 +164,35 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
 
 
 def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_attr=0.5, k_inter=0.1,
-                          knn_k=15, sample_size=512, batch_size=1024, num_iterations=40, backend='pytorch', **kwargs):
+                          n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
     """
     Run a benchmark to calculate correlations between embedding radii and centrality measures.
 
     Parameters
     ----------
     graph_generator : callable
-        Function to generate a graph
+        Function to generate a graph (returns sparse adjacency matrix)
     graph_params : dict
         Parameters for the graph generator
-    Other parameters : same as run_benchmark
+    dim : int, default=2
+        Number of embedding components (dimensions)
+    L_min, k_attr, k_inter : float
+        Force-directed layout parameters
+    n_neighbors : int, default=15
+        Number of nearest neighbors for intersection detection
+    sample_size : int, default=512
+        Sample size for kNN computation
+    num_iterations : int, default=40
+        Number of layout iterations
+    backend : str, default='pytorch'
+        Backend to use
+    **kwargs
+        Additional embedder parameters
 
     Returns
     -------
     dict
-        Benchmark results with correlations
+        Benchmark results with correlation coefficients for centrality measures
     """
     # Run the benchmark to get basic metrics
     results = run_benchmark(
@@ -182,9 +202,8 @@ def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_a
         L_min=L_min,
         k_attr=k_attr,
         k_inter=k_inter,
-        knn_k=knn_k,
+        n_neighbors=n_neighbors,
         sample_size=sample_size,
-        batch_size=batch_size,
         num_iterations=num_iterations,
         backend=backend,
         **kwargs
@@ -232,28 +251,28 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
     Parameters
     ----------
     graph_generator : callable
-        Function to generate a graph
+        Function to generate a graph (returns sparse adjacency matrix)
     graph_params : dict
         Parameters for the graph generator
     k : int, default=10
-        Number of seed nodes to select
+        Number of seed nodes to select for influence maximization
     p : float, default=0.1
-        Propagation probability
+        Propagation probability for influence diffusion
     iterations : int, default=200
-        Number of iterations for influence simulation
+        Number of Monte Carlo iterations for influence estimation
     dim : int, default=3
-        Embedding dimension
+        Number of embedding components (dimensions)
     num_layout_iterations : int, default=20
-        Number of iterations for layout algorithm
+        Number of force-directed layout iterations
     layout_params : dict, optional
-        Parameters for the layout algorithm
+        Additional parameters for embedder initialization (L_min, k_attr, k_inter, etc.)
     backend : str, default='pytorch'
-        Backend to use for embedding
+        Backend to use for embedding ('pytorch', 'cuvs', or 'auto')
 
     Returns
     -------
     dict
-        Benchmark results comparing influence maximization methods
+        Benchmark results comparing GraphEm vs Greedy seed selection with influence metrics
     """
     logger.info("Running influence benchmark with %s...", graph_generator.__name__)
 
@@ -281,7 +300,7 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
             'L_min': 10.0,
             'k_attr': 0.5,
             'k_inter': 0.1,
-            'knn_k': 15,
+            'n_neighbors': 15,
             'sample_size': 512,
             'batch_size': 1024
         }
@@ -291,7 +310,7 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
     embedder = GraphEmbedderPyTorch(
         edges=edges,
         n_vertices=n,
-        dimension=dim,
+        n_components=dim,
         verbose=True,
         **layout_params
     )

@@ -277,11 +277,11 @@ class BenchmarkRunner:
                 embedder = GraphEmbedderPyTorch(
                     edges=edges,
                     n_vertices=n_vertices,
-                    dimension=3,
+                    n_components=3,
                     L_min=4.0,
                     k_attr=0.5,
                     k_inter=0.1,
-                    knn_k=min(15, n_vertices // 10),
+                    n_neighbors=min(15, n_vertices // 10),
                     sample_size=min(512, len(edges)),
                     batch_size=min(1024, len(edges)),
                     verbose=False
@@ -412,11 +412,11 @@ class BenchmarkRunner:
                 embedder = GraphEmbedderPyTorch(
                     edges=edges,
                     n_vertices=n,
-                    dimension=3,
+                    n_components=3,
                     L_min=10.0,
                     k_attr=0.5,
                     k_inter=0.1,
-                    knn_k=15,
+                    n_neighbors=15,
                     sample_size=min(512, len(edges)),
                     batch_size=min(1024, n),
                     verbose=False

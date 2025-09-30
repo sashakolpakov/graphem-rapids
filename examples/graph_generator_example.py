@@ -44,15 +44,15 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     print(f"{'='*50}")
     
     # Generate graph
-    edges = generator(**params)
+    adjacency = generator(**params)
     
     # Determine number of vertices
-    if len(edges) > 0:
+    if adjacency.nnz//2 > 0:
         n = int(max(np.max(edges) + 1, params.get('n', 0)))
     else:
         n = params.get('n', 0)
     
-    print(f"Generated graph with {n} vertices and {len(edges)} edges")
+    print(f"Generated graph with {n} vertices and {adjacency.nnz//2} edges")
     
     # Create NetworkX graph for visualization
     G = nx.Graph()
@@ -60,8 +60,8 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     G.add_edges_from(edges)
     
     print("Graph statistics:")
-    print(f"- Density: {2 * len(edges) / (n * (n - 1)):.4f}")
-    print(f"- Average degree: {2 * len(edges) / n:.2f}")
+    print(f"- Density: {2 * adjacency.nnz//2 / (n * (n - 1)):.4f}")
+    print(f"- Average degree: {2 * adjacency.nnz//2 / n:.2f}")
     
     try:
         print(f"- Average shortest path length: {nx.average_shortest_path_length(G):.2f}")
@@ -77,15 +77,14 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
-        edges=edges,
+        adjacency=edges,
         n_vertices=n,
-        dimension=dim,
+        n_components=dim,
         L_min=10.0,
         k_attr=0.5,
         k_inter=0.1,
-        knn_k=15,
-        sample_size=min(512, len(edges)),
-        batch_size=min(1024, n),
+        n_neighbors=15,
+        sample_size=min(512, adjacency.nnz//2),
         verbose=True
     )
     

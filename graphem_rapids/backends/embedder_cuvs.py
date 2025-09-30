@@ -9,7 +9,6 @@ import logging
 import warnings
 
 import numpy as np
-import torch
 import plotly.graph_objects as go
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -57,8 +56,6 @@ class GraphEmbedderCuVS:
         Number of vertices in the graph.
     n_components : int
         Number of components (dimensions) in the embedding space.
-    dimension : int
-        Dimension of the embedding space (for backward compatibility).
     positions : cupy.ndarray
         Current vertex positions as (n_vertices, n_components) array.
     """
@@ -75,7 +72,8 @@ class GraphEmbedderCuVS:
         index_type='auto',
         dtype=np.float32,
         verbose=True,
-        logger_instance=None
+        logger_instance=None,
+        seed=None
     ):
         """
         Initialize the cuVS GraphEmbedder.
@@ -105,7 +103,15 @@ class GraphEmbedderCuVS:
             Enable verbose logging.
         logger_instance : logging.Logger, optional
             Custom logger instance.
+        seed : int, optional
+            Random seed for reproducibility. If provided, sets numpy and cupy seeds.
         """
+        # Set random seeds for reproducibility if provided
+        if seed is not None:
+            np.random.seed(seed)
+            if CUVS_AVAILABLE:
+                cp.random.seed(seed)
+
         if not CUVS_AVAILABLE:
             raise ImportError(
                 "RAPIDS cuVS is not available. Please install RAPIDS cuVS or use PyTorch backend."
@@ -130,14 +136,11 @@ class GraphEmbedderCuVS:
 
         # Store parameters
         self.n = adjacency.shape[0]
-        self.n_vertices = self.n  # For backward compatibility
-        self.dimension = n_components  # For backward compatibility
         self.n_components = n_components
         self.dtype = dtype
         self.L_min = L_min
         self.k_attr = k_attr
         self.k_inter = k_inter
-        self.knn_k = n_neighbors  # For backward compatibility
         self.n_neighbors = n_neighbors
 
         # Calculate number of edges for sample size validation
@@ -151,11 +154,11 @@ class GraphEmbedderCuVS:
         self.edges = cp.asarray(edges, dtype=cp.int32)
 
         # Memory management for large datasets
-        self.chunk_size = get_optimal_chunk_size(self.n, self.dimension)
+        self.chunk_size = get_optimal_chunk_size(self.n, self.n_components)
 
         if self.verbose:
             self.logger.info("Initialized GraphEmbedderCuVS")
-            self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.dimension)
+            self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.n_components)
             self.logger.info("Index type: %s", self.index_type)
             self.logger.info("Chunk size: %d", self.chunk_size)
 
@@ -180,10 +183,14 @@ class GraphEmbedderCuVS:
         scipy.sparse.csr_matrix
             Validated adjacency matrix in CSR format
         """
-        import scipy.sparse as sp
-
-        # Convert to numpy array if needed
-        if not isinstance(adjacency, (np.ndarray, sp.spmatrix)):
+        # Handle scipy sparse matrices first
+        if sp.issparse(adjacency):
+            adjacency = adjacency.tocsr()  # Ensure CSR format
+        elif isinstance(adjacency, np.ndarray):
+            # Already a numpy array
+            pass
+        else:
+            # Try to convert to numpy array
             adjacency = np.asarray(adjacency)
 
         # Check if square
@@ -193,8 +200,6 @@ class GraphEmbedderCuVS:
         # Convert to sparse format if needed
         if not sp.issparse(adjacency):
             adjacency = sp.csr_matrix(adjacency)
-        elif not isinstance(adjacency, sp.csr_matrix):
-            adjacency = adjacency.tocsr()
 
         return adjacency
 
@@ -222,13 +227,13 @@ class GraphEmbedderCuVS:
         L = laplacian(A, normed=True)
 
         # Compute eigenvectors
-        k = self.dimension + 1
+        k = self.n_components + 1
         try:
             _, eigenvectors = spla.eigsh(L, k, which='SM')
             lap_embedding = eigenvectors[:, 1:k]
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.warning("Eigendecomposition failed: %s", e)
-            lap_embedding = np.random.randn(self.n, self.dimension) * 0.1
+            lap_embedding = np.random.randn(self.n, self.n_components) * 0.1
 
         # Transfer to GPU
         positions = cp.asarray(lap_embedding, dtype=self.dtype)
@@ -278,7 +283,7 @@ class GraphEmbedderCuVS:
                 elif index_type == 'ivf_pq':
                     # Build IVF-PQ index for memory efficiency
                     n_lists = min(int(np.sqrt(self.n)), 16384)
-                    pq_dim = min(self.dimension, 64)
+                    pq_dim = min(self.n_components, 64)
                     self.knn_index = ivf_pq.build(
                         self.positions,
                         metric='l2',
@@ -630,9 +635,9 @@ class GraphEmbedderCuVS:
         """Display the graph embedding using Plotly."""
         self.logger.info("Displaying cuVS layout")
 
-        if self.dimension == 2:
+        if self.n_components == 2:
             self._display_layout_2d(edge_width, node_size, node_colors)
-        elif self.dimension == 3:
+        elif self.n_components == 3:
             self._display_layout_3d(edge_width, node_size, node_colors)
         else:
             raise ValueError("Can only display 2D or 3D layouts")

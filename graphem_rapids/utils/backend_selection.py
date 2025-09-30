@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class BackendConfig:
     """Configuration for backend selection."""
     n_vertices: int
-    dimension: int = 2
+    n_components: int = 2
     force_backend: str = None
     prefer_gpu: bool = True
     memory_limit: float = None  # GB
@@ -131,7 +131,7 @@ def get_data_complexity_score(config):
     vertex_score = sigmoid(config.n_vertices, offset=1_000_000, scale=2**18)
 
     # Dimension penalty (higher dimensions are more expensive)
-    dimension_score = sigmoid(config.dimension, offset=5, scale=1.0)
+    dimension_score = sigmoid(config.n_components, offset=5, scale=1.0)
 
     # Combined score
     complexity = (vertex_score * 0.8) + (dimension_score * 0.2)
@@ -220,25 +220,34 @@ def estimate_memory_usage(config):
     float
         Estimated memory usage in GB.
     """
-    # Rough estimates based on graph embedding requirements
+    # Realistic estimates based on graph embedding requirements
     n = config.n_vertices
-    d = config.dimension
+    d = config.n_components
 
     # Position matrix: n × d × 4 bytes (float32)
     position_memory = n * d * 4
 
-    # Edge-related operations (assume sparse graph with O(n) edges)
-    edge_memory = n * 8  # Typical sparse graph
+    # Edge-related operations (assume sparse graph with average degree ~10)
+    avg_edges = n * 5  # Conservative estimate for sparse graphs
+    edge_memory = avg_edges * 8  # Edge indices
 
-    # Force computation buffers
-    force_memory = n * d * 4 * 3  # Multiple force arrays
+    # Force computation buffers (positions, velocities, forces, gradients)
+    force_memory = n * d * 4 * 6  # Multiple arrays for optimization
 
-    # KNN operations (temporary arrays)
-    knn_memory = min(n * 100, 10_000_000) * 4  # Capped at reasonable limit
+    # KNN operations (distance matrices, neighbor indices)
+    # For large graphs, this dominates memory usage
+    knn_memory = min(n * n * 4 / 100, n * 500 * 4)  # Sparse KNN storage
 
-    # Total in bytes, convert to GB with safety margin
-    total_bytes = position_memory + edge_memory + force_memory + knn_memory
-    total_gb = total_bytes / (1024**3) * 1.5  # 50% safety margin
+    # GPU-specific overhead (if using GPU backend)
+    gpu_overhead = max(n * d * 4 * 2, 100_000_000)  # Minimum 100MB overhead
+
+    # Batch processing buffers
+    batch_memory = min(n * 1024 * 4, 500_000_000)  # Capped at 500MB
+
+    # Total in bytes, convert to GB with realistic safety margin
+    total_bytes = (position_memory + edge_memory + force_memory +
+                   knn_memory + gpu_overhead + batch_memory)
+    total_gb = total_bytes / (1024**3) * 2.0  # 100% safety margin for realistic estimates
 
     return total_gb
 
@@ -258,7 +267,7 @@ def log_backend_selection(config, selected_backend):
     rapids_info = check_rapids_availability()
 
     print("\n=== GraphEm Rapids Backend Selection ===")
-    print(f"Dataset: {config.n_vertices:,} vertices, {config.dimension}D")
+    print(f"Dataset: {config.n_vertices:,} vertices, {config.n_components}D")
     print(f"Complexity score: {get_data_complexity_score(config):.3f}")
     print(f"Estimated memory: {estimate_memory_usage(config):.1f} GB")
     print("\nHardware:")

@@ -211,7 +211,7 @@ class TestMemoryRequirements:
 
         result = check_memory_requirements(
             n_vertices=1000,
-            dimension=2,
+            n_components=2,
             backend='pytorch'
         )
 
@@ -224,7 +224,7 @@ class TestMemoryRequirements:
         """Test memory requirements for large graphs."""
         result = check_memory_requirements(
             n_vertices=100000,  # Large graph
-            dimension=3,
+            n_components=3,
             backend='pytorch'
         )
 
@@ -242,7 +242,7 @@ class TestMemoryRequirements:
         """Test memory requirements for CPU backend."""
         result = check_memory_requirements(
             n_vertices=1000,
-            dimension=2,
+            n_components=2,
             backend='cpu'
         )
 
@@ -261,7 +261,7 @@ class TestMemoryRequirements:
 
         result = check_memory_requirements(
             n_vertices=1000,
-            dimension=2,
+            n_components=2,
             backend='pytorch'
         )
 
@@ -272,13 +272,13 @@ class TestMemoryRequirements:
         """Test memory requirements scale with problem size."""
         small_result = check_memory_requirements(
             n_vertices=1000,
-            dimension=2,
+            n_components=2,
             backend='cpu'
         )
 
         large_result = check_memory_requirements(
             n_vertices=10000,
-            dimension=3,
+            n_components=3,
             backend='cpu'
         )
 

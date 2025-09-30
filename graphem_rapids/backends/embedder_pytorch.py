@@ -34,8 +34,10 @@ class GraphEmbedderPyTorch:
 
     Attributes
     ----------
+    adjacency : scipy.sparse.csr_matrix
+        Sparse adjacency matrix (n_vertices × n_vertices).
     edges : torch.Tensor
-        Edge list as (n_edges, 2) tensor.
+        Edge list extracted from adjacency matrix as (n_edges, 2) tensor.
     n : int
         Number of vertices in the graph.
     n_components : int
@@ -59,7 +61,8 @@ class GraphEmbedderPyTorch:
         sample_size=256,
         memory_efficient=True,
         verbose=True,
-        logger_instance=None
+        logger_instance=None,
+        seed=None
     ):
         """
         Initialize the PyTorch GraphEmbedder.
@@ -92,7 +95,17 @@ class GraphEmbedderPyTorch:
             Enable verbose logging.
         logger_instance : logging.Logger, optional
             Custom logger instance.
+        seed : int, optional
+            Random seed for reproducibility. If provided, sets both numpy and torch seeds.
         """
+        # Set random seeds for reproducibility if provided
+        if seed is not None:
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+                torch.cuda.manual_seed_all(seed)
+
         # Setup device
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -167,8 +180,14 @@ class GraphEmbedderPyTorch:
         scipy.sparse.csr_matrix
             Validated adjacency matrix in CSR format
         """
-        # Convert to numpy array if needed
-        if not isinstance(adjacency, (np.ndarray, sp.spmatrix)):
+        # Handle scipy sparse matrices first
+        if sp.issparse(adjacency):
+            adjacency = adjacency.tocsr()  # Ensure CSR format
+        elif isinstance(adjacency, np.ndarray):
+            # Already a numpy array
+            pass
+        else:
+            # Try to convert to numpy array
             adjacency = np.asarray(adjacency)
 
         # Check if square
@@ -182,8 +201,6 @@ class GraphEmbedderPyTorch:
         # Convert to scipy sparse for uniform handling
         if not sp.issparse(adjacency):
             adjacency = sp.csr_matrix(adjacency)
-        else:
-            adjacency = adjacency.tocsr()  # Ensure CSR format
 
         return adjacency
 
@@ -217,7 +234,7 @@ class GraphEmbedderPyTorch:
     def _check_pykeops_availability(self):
         """Check if PyKeOps is available and functional."""
         try:
-            from pykeops.torch import LazyTensor
+            from pykeops.torch import LazyTensor  # pylint: disable=import-outside-toplevel
             # Test basic functionality
             test_tensor = torch.randn(2, 3, device=self.device, dtype=self.dtype)
             x_i = LazyTensor(test_tensor[:1, None, :])
@@ -227,7 +244,7 @@ class GraphEmbedderPyTorch:
         except (ImportError, RuntimeError, AttributeError):
             return False
 
-    def _get_adaptive_chunk_size(self, n_query, n_ref, n_dims, backend):
+    def _get_adaptive_chunk_size(self, n_query, n_ref, backend):
         """
         Calculate adaptive chunk size based on available GPU memory and backend.
 
@@ -237,8 +254,6 @@ class GraphEmbedderPyTorch:
             Number of query points.
         n_ref : int
             Number of reference points.
-        n_dims : int
-            Number of dimensions.
         backend : str
             Backend type ('torch' or 'pykeops').
 
@@ -283,11 +298,11 @@ class GraphEmbedderPyTorch:
                 chunk_size = min(chunk_size, n_query)
 
                 if self.verbose:
-                    self.logger.info(f"Adaptive chunk size for {backend}: {chunk_size} "
-                                   f"(GPU memory: {gpu_mem_free/1024**3:.1f}GB, dtype: {self.dtype})")
+                    self.logger.info("Adaptive chunk size for %s: %d (GPU memory: %.1fGB, dtype: %s)",
+                                   backend, chunk_size, gpu_mem_free/1024**3, self.dtype)
 
                 return chunk_size
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 # Fallback to base chunk size if memory info unavailable
                 pass
 
@@ -430,7 +445,7 @@ class GraphEmbedderPyTorch:
                       self.dtype == torch.float32)  # PyKeOps doesn't work well with FP16
 
         if n_dims >= 200:
-            self.logger.info(f"Using PyTorch for k-NN (high dimension: {n_dims}D)")
+            self.logger.info("Using PyTorch for k-NN (high dimension: %dD)", n_dims)
             backend = 'torch'
         elif use_pykeops:
             self.logger.info("Using PyKeOps for k-NN (low dimension, GPU available)")
@@ -440,21 +455,19 @@ class GraphEmbedderPyTorch:
             backend = 'torch'
 
         # Adaptive chunking based on backend and memory
-        chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, n_dims, backend)
+        chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, backend)
 
         try:
             if backend == 'pykeops':
                 return self._compute_knn_pykeops(query_points, reference_points, k, chunk_size)
-            else:
-                return self._compute_knn_torch(query_points, reference_points, k, chunk_size)
+            return self._compute_knn_torch(query_points, reference_points, k, chunk_size)
         except (ImportError, RuntimeError, AttributeError) as e:
             if backend == 'pykeops':
                 if self.verbose:
                     self.logger.info("PyKeOps failed, falling back to torch.cdist: %s", str(e))
-                chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, n_dims, 'torch')
+                chunk_size = self._get_adaptive_chunk_size(n_query, n_ref, 'torch')
                 return self._compute_knn_torch(query_points, reference_points, k, chunk_size)
-            else:
-                raise e
+            raise e
 
     def _compute_knn_pykeops(
         self,
@@ -483,9 +496,9 @@ class GraphEmbedderPyTorch:
             KNN indices as (n_query, k) tensor.
         """
         try:
-            from pykeops.torch import LazyTensor
-        except ImportError:
-            raise ImportError("PyKeOps not available")
+            from pykeops.torch import LazyTensor  # pylint: disable=import-outside-toplevel
+        except ImportError as exc:
+            raise ImportError("PyKeOps not available") from exc
 
         n_query = query_points.shape[0]
         all_knn_indices = []
@@ -495,7 +508,7 @@ class GraphEmbedderPyTorch:
             query_chunk = query_points[i:end_idx]
 
             if n_query > 50000:  # Only log for large datasets
-                self.logger.info(f"Processing PyKeOps chunk {i//chunk_size + 1}/{(n_query + chunk_size - 1)//chunk_size}")
+                self.logger.info("Processing PyKeOps chunk %d/%d", i//chunk_size + 1, (n_query + chunk_size - 1)//chunk_size)
 
             # Create LazyTensors for symbolic computation
             x_i = LazyTensor(query_chunk[:, None, :])  # (M, 1, D)
@@ -548,7 +561,7 @@ class GraphEmbedderPyTorch:
             query_chunk = query_points[i:end_idx]
 
             if n_query > 50000:  # Only log for large datasets
-                self.logger.info(f"Processing torch chunk {i//chunk_size + 1}/{(n_query + chunk_size - 1)//chunk_size}")
+                self.logger.info("Processing torch chunk %d/%d", i//chunk_size + 1, (n_query + chunk_size - 1)//chunk_size)
 
             # Compute distances for this chunk (MUCH faster for high dimensions!)
             distances = torch.cdist(query_chunk, reference_points, p=2)

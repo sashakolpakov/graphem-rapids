@@ -38,23 +38,21 @@ def main():
     # Generate a small test graph
     print("\n2. Generating test graph...")
     n_vertices = 100
-    edges = gr.erdos_renyi_graph(n=n_vertices, p=0.05)
-    print(f"   Generated graph: {n_vertices} vertices, {len(edges)} edges")
+    adjacency = gr.erdos_renyi_graph(n=n_vertices, p=0.05)
+    print(f"   Generated graph: {n_vertices} vertices, {adjacency.nnz//2} edges")
 
     # Test automatic backend selection
     print("\n3. Testing automatic backend selection...")
     try:
         start_time = time.time()
         embedder = gr.create_graphem(
-            edges=edges,
-            n_vertices=n_vertices,
-            dimension=2,
+            adjacency=adjacency,
+            n_components=2,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
-            knn_k=15,
-            sample_size=min(256, len(edges)),
-            batch_size=min(1024, n_vertices),
+            n_neighbors=15,
+            sample_size=256,
             verbose=True
         )
         init_time = time.time() - start_time
@@ -95,19 +93,17 @@ def main():
         for size in test_sizes:
             print(f"\n   Testing {size} vertices...")
             try:
-                edges = gr.erdos_renyi_graph(n=size, p=0.02)
+                adjacency = gr.erdos_renyi_graph(n=size, p=0.02)
                 start_time = time.time()
 
                 embedder = gr.create_graphem(
-                    edges=edges,
-                    n_vertices=size,
-                    dimension=3,
+                    adjacency=adjacency,
+                    n_components=3,
                     L_min=10.0,
                     k_attr=0.5,
                     k_inter=0.1,
-                    knn_k=15,
-                    sample_size=min(256, len(edges)),
-                    batch_size=min(1024, size),
+                    n_neighbors=15,
+                    sample_size=256,
                     verbose=False
                 )
 

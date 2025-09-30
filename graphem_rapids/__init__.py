@@ -117,7 +117,7 @@ def create_graphem(
     # Configure backend
     config = BackendConfig(
         n_vertices=n_vertices,
-        dimension=n_components
+        n_components=n_components
     )
     config.force_backend = backend
 

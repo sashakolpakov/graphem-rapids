@@ -79,7 +79,7 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     n_vertices = len(vertices)
     load_time = time.time() - start_time
     
-    print(f"Loaded dataset with {n_vertices:,} vertices and {len(edges):,} edges in {load_time:.2f}s")
+    print(f"Loaded dataset with {n_vertices:,} vertices and {adjacency.nnz//2:,} edges in {load_time:.2f}s")
     
     # Sample the graph if needed
     if sample_size is not None and sample_size < n_vertices:
@@ -96,7 +96,7 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
         edges = np.array(sampled_edges)
         n_vertices = sample_size
         
-        print(f"Sampled graph has {n_vertices:,} vertices and {len(edges):,} edges")
+        print(f"Sampled graph has {n_vertices:,} vertices and {adjacency.nnz//2:,} edges")
     
     # Create NetworkX graph for analysis
     G = nx.Graph()
@@ -108,8 +108,8 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
                                            label_attribute=None)
     
     # Analyze graph properties
-    density = 2 * len(edges) / (n_vertices * (n_vertices - 1))
-    avg_degree = 2 * len(edges) / n_vertices
+    density = 2 * adjacency.nnz//2 / (n_vertices * (n_vertices - 1))
+    avg_degree = 2 * adjacency.nnz//2 / n_vertices
     
     print("Graph statistics:")
     print(f"- Density: {density:.6f}")
@@ -163,15 +163,14 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     print(f"Creating embedding in dimension {dim}...")
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
-        edges=G_cc.edges,
+        adjacency=G_cc.edges,
         n_vertices=G_cc.number_of_nodes(),
-        dimension=dim,
+        n_components=dim,
         L_min=4.0,
         k_attr=0.5,
         k_inter=0.1,
-        knn_k=min(15, G_cc.number_of_nodes() // 10),
+        n_neighbors=min(15, G_cc.number_of_nodes() // 10),
         sample_size=min(512, G_cc.number_of_edges()),
-        batch_size=min(1024, G_cc.number_of_nodes()),
         verbose=False
     )
     
@@ -281,7 +280,7 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         n_vertices = len(vertices)
         load_time = time.time() - start_time
         
-        print(f"Loaded dataset with {n_vertices:,} vertices and {len(edges):,} edges in {load_time:.2f}s")
+        print(f"Loaded dataset with {n_vertices:,} vertices and {adjacency.nnz//2:,} edges in {load_time:.2f}s")
         
         # Sample the graph
         print(f"Sampling {sample_size:,} vertices from the graph...")
@@ -297,7 +296,7 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         edges = np.array(sampled_edges)
         n_vertices = sample_size
         
-        print(f"Sampled graph has {n_vertices:,} vertices and {len(edges):,} edges")
+        print(f"Sampled graph has {n_vertices:,} vertices and {adjacency.nnz//2:,} edges")
         
         # Create NetworkX graph for analysis
         G = nx.Graph()
@@ -309,8 +308,8 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
                                                label_attribute=None)
         
         # Analyze graph properties
-        density = 2 * len(edges) / (n_vertices * (n_vertices - 1))
-        avg_degree = 2 * len(edges) / n_vertices
+        density = 2 * adjacency.nnz//2 / (n_vertices * (n_vertices - 1))
+        avg_degree = 2 * adjacency.nnz//2 / n_vertices
         
         # Get largest connected component
         largest_cc = max(nx.connected_components(G), key=len)
@@ -350,15 +349,14 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            edges=edges,
+            adjacency=edges,
             n_vertices=n_vertices,
-            dimension=dim,
+            n_components=dim,
             L_min=4.0,
             k_attr=0.5,
             k_inter=0.1,
-            knn_k=min(15, n_vertices // 10),
-            sample_size=min(512, len(edges)),
-            batch_size=min(1024, len(edges)),
+            n_neighbors=min(15, n_vertices // 10),
+            sample_size=min(512, adjacency.nnz//2),
             verbose=False
         )
         
@@ -370,7 +368,7 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         results.append({
             'dataset': dataset_name,
             'vertices': n_vertices,
-            'edges': len(edges),
+            'edges': adjacency.nnz//2,
             'density': density,
             'avg_degree': avg_degree,
             'lcc_size': lcc_size,

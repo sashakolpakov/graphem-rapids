@@ -53,10 +53,10 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         
         # Generate graph
         start_time = time.time()
-        edges = generate_random_regular(n=n, d=d, seed=42)
+        adjacency = generate_random_regular(n=n, d=d, seed=42)
         gen_time = time.time() - start_time
         
-        print(f"Generated graph with {n} vertices, {len(edges)} edges in {gen_time:.2f}s")
+        print(f"Generated graph with {n} vertices, {adjacency.nnz//2} edges in {gen_time:.2f}s")
         
         # Create NetworkX graph for analysis
         G = nx.Graph()
@@ -64,8 +64,8 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         G.add_edges_from(edges)
         
         # Analyze graph properties
-        density = 2 * len(edges) / (n * (n - 1))
-        avg_degree = 2 * len(edges) / n
+        density = 2 * adjacency.nnz//2 / (n * (n - 1))
+        avg_degree = 2 * adjacency.nnz//2 / n
         
         print("Graph statistics:")
         print(f"- Density: {density:.4f}")
@@ -98,15 +98,14 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            edges=edges,
+            adjacency=edges,
             n_vertices=n,
-            dimension=dim,
+            n_components=dim,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
-            knn_k=15,
-            sample_size=min(512, len(edges)),
-            batch_size=min(1024, n),
+            n_neighbors=15,
+            sample_size=min(512, adjacency.nnz//2),
             verbose=True
         )
         
@@ -216,10 +215,10 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         
         # Generate graph
         start_time = time.time()
-        edges = generate_random_regular(n=n, d=degree, seed=42)
+        adjacency = generate_random_regular(n=n, d=degree, seed=42)
         gen_time = time.time() - start_time
         
-        print(f"Generated graph with {n} vertices, {len(edges)} edges in {gen_time:.2f}s")
+        print(f"Generated graph with {n} vertices, {adjacency.nnz//2} edges in {gen_time:.2f}s")
         
         # Create NetworkX graph for analysis
         G = nx.Graph()
@@ -227,8 +226,8 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         G.add_edges_from(edges)
         
         # Analyze graph properties
-        density = 2 * len(edges) / (n * (n - 1))
-        avg_degree = 2 * len(edges) / n
+        density = 2 * adjacency.nnz//2 / (n * (n - 1))
+        avg_degree = 2 * adjacency.nnz//2 / n
         
         print("Graph statistics:")
         print(f"- Density: {density:.4f}")
@@ -260,15 +259,14 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
-            edges=edges,
+            adjacency=edges,
             n_vertices=n,
-            dimension=dim,
+            n_components=dim,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
-            knn_k=15,
-            sample_size=min(512, len(edges)),
-            batch_size=min(1024, n),
+            n_neighbors=15,
+            sample_size=min(512, adjacency.nnz//2),
             verbose=True
         )
         
@@ -359,9 +357,8 @@ def compare_with_benchmark():
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
-            knn_k=15,
+            n_neighbors=15,
             sample_size=512,
-            batch_size=1024,
             num_iterations=30
         )
 

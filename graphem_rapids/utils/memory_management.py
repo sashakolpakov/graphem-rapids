@@ -44,7 +44,7 @@ def get_gpu_memory_info():
 
 def get_optimal_chunk_size(
     n_vertices,
-    dimension,
+    n_components,
     available_memory_gb=None,
     safety_factor=0.7,
     backend='torch'
@@ -56,8 +56,8 @@ def get_optimal_chunk_size(
     ----------
     n_vertices : int
         Number of vertices in the graph.
-    dimension : int
-        Embedding dimension.
+    n_components : int
+        Embedding n_components.
     available_memory_gb : float, optional
         Available GPU memory in GB. If None, automatically detected.
     safety_factor : float, default=0.7
@@ -81,15 +81,15 @@ def get_optimal_chunk_size(
     # Backend-specific memory estimation
     if backend == 'pykeops':
         # PyKeOps uses symbolic computation with lower memory overhead
-        bytes_per_vertex = dimension * 4 * 2  # Less temporary storage needed
+        bytes_per_vertex = n_components * 4 * 2  # Less temporary storage needed
         memory_multiplier = 1.5  # Can handle larger chunks efficiently
     elif backend == 'cuvs':
         # CUVS is highly optimized for GPU
-        bytes_per_vertex = dimension * 4 * 3
+        bytes_per_vertex = n_components * 4 * 3
         memory_multiplier = 1.2
     else:  # torch default
         # Standard torch needs more memory for intermediate computations
-        bytes_per_vertex = dimension * 4 * 5  # float32, multiple arrays
+        bytes_per_vertex = n_components * 4 * 5  # float32, multiple arrays
         memory_multiplier = 1.0
 
     vertices_per_gb = (1024**3) / bytes_per_vertex
@@ -251,7 +251,7 @@ def adaptive_batch_size(
 
 def check_memory_requirements(
     n_vertices,
-    dimension,
+    n_components,
     backend='pytorch'
 ):
     """
@@ -261,8 +261,8 @@ def check_memory_requirements(
     ----------
     n_vertices : int
         Number of vertices.
-    dimension : int
-        Embedding dimension.
+    n_components : int
+        Embedding n_components.
     backend : str, default='pytorch'
         Backend to use.
 
@@ -272,7 +272,7 @@ def check_memory_requirements(
         Memory requirement analysis.
     """
     # Estimate memory requirements
-    position_memory = n_vertices * dimension * 4  # float32 positions
+    position_memory = n_vertices * n_components * 4  # float32 positions
     force_memory = position_memory * 2  # Force arrays
     knn_memory = min(n_vertices * 100 * 4, 1024**3)  # KNN operations, capped at 1GB
     overhead = (position_memory + force_memory) * 0.3  # 30% overhead
@@ -288,7 +288,7 @@ def check_memory_requirements(
         'available_gb': gpu_info['free'] if gpu_info['available'] else 8.0,
         'sufficient': False,
         'recommendation': 'cpu',
-        'estimated_chunk_size': get_optimal_chunk_size(n_vertices, dimension)
+        'estimated_chunk_size': get_optimal_chunk_size(n_vertices, n_components)
     }
 
     if backend in ('cuvs', 'pytorch'):

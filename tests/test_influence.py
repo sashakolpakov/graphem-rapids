@@ -8,6 +8,7 @@ from graphem_rapids.influence import ndlib_estimated_influence
 class TestInfluence:
     """Test influence maximization functionality."""
 
+    @pytest.mark.fast
     def test_influence_estimation(self):
         """Test influence estimation with NDLib."""
         G = nx.path_graph(10)
@@ -25,6 +26,7 @@ class TestInfluence:
         except ImportError:
             pytest.skip("NDLib not available")
 
+    @pytest.mark.fast
     def test_influence_different_probabilities(self):
         """Test influence with different spread probabilities."""
         G = nx.complete_graph(8)
@@ -43,6 +45,7 @@ class TestInfluence:
         except ImportError:
             pytest.skip("NDLib not available")
 
+    @pytest.mark.fast
     def test_empty_seed_set(self):
         """Test influence with empty seed set."""
         G = nx.path_graph(5)
@@ -56,6 +59,7 @@ class TestInfluence:
         except ImportError:
             pytest.skip("NDLib not available")
 
+    @pytest.mark.fast
     def test_disconnected_graph_influence(self):
         """Test influence on disconnected graph."""
         G = nx.Graph()

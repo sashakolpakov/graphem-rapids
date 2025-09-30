@@ -20,9 +20,9 @@ class TestBackendConfig:
     @pytest.mark.fast
     def test_backend_config_initialization(self):
         """Test BackendConfig initialization."""
-        config = BackendConfig(n_vertices=1000, dimension=2)
+        config = BackendConfig(n_vertices=1000, n_components=2)
         assert config.n_vertices == 1000
-        assert config.dimension == 2
+        assert config.n_components == 2
         assert config.force_backend is None
         assert config.prefer_gpu is True
         assert config.memory_limit is None
@@ -45,14 +45,14 @@ class TestBackendConfig:
         """Test BackendConfig with custom parameters."""
         config = BackendConfig(
             n_vertices=5000,
-            dimension=3,
+            n_components=3,
             force_backend='pytorch',
             prefer_gpu=False,
             memory_limit=8.0,
             verbose=False
         )
         assert config.n_vertices == 5000
-        assert config.dimension == 3
+        assert config.n_components == 3
         assert config.force_backend == 'pytorch'
         assert config.prefer_gpu is False
         assert config.memory_limit == 8.0
@@ -67,15 +67,15 @@ class TestComplexityScoring:
         """Test complexity score is in valid range."""
         for n_vertices in [100, 1000, 10000, 1000000]:
             for dimension in [2, 3, 10]:
-                config = BackendConfig(n_vertices=n_vertices, dimension=dimension)
+                config = BackendConfig(n_vertices=n_vertices, n_components=dimension)
                 score = get_data_complexity_score(config)
                 assert 0 <= score <= 1, f"Score {score} out of range for n={n_vertices}, d={dimension}"
 
     @pytest.mark.fast
     def test_complexity_increases_with_size(self):
         """Test complexity increases with graph size."""
-        small_config = BackendConfig(n_vertices=1000, dimension=2)
-        large_config = BackendConfig(n_vertices=100000, dimension=2)
+        small_config = BackendConfig(n_vertices=1000, n_components=2)
+        large_config = BackendConfig(n_vertices=100000, n_components=2)
 
         small_score = get_data_complexity_score(small_config)
         large_score = get_data_complexity_score(large_config)
@@ -85,8 +85,8 @@ class TestComplexityScoring:
     @pytest.mark.fast
     def test_complexity_increases_with_dimension(self):
         """Test complexity increases with dimension."""
-        config_2d = BackendConfig(n_vertices=10000, dimension=2)
-        config_10d = BackendConfig(n_vertices=10000, dimension=10)
+        config_2d = BackendConfig(n_vertices=10000, n_components=2)
+        config_10d = BackendConfig(n_vertices=10000, n_components=10)
 
         score_2d = get_data_complexity_score(config_2d)
         score_10d = get_data_complexity_score(config_10d)
@@ -100,15 +100,15 @@ class TestMemoryEstimation:
     @pytest.mark.fast
     def test_memory_estimation_positive(self):
         """Test memory estimation returns positive values."""
-        config = BackendConfig(n_vertices=1000, dimension=2)
+        config = BackendConfig(n_vertices=1000, n_components=2)
         memory_gb = estimate_memory_usage(config)
         assert memory_gb > 0
 
     @pytest.mark.fast
     def test_memory_scales_with_vertices(self):
         """Test memory estimation scales with number of vertices."""
-        small_config = BackendConfig(n_vertices=1000, dimension=2)
-        large_config = BackendConfig(n_vertices=10000, dimension=2)
+        small_config = BackendConfig(n_vertices=1000, n_components=2)
+        large_config = BackendConfig(n_vertices=10000, n_components=2)
 
         small_memory = estimate_memory_usage(small_config)
         large_memory = estimate_memory_usage(large_config)
@@ -118,8 +118,8 @@ class TestMemoryEstimation:
     @pytest.mark.fast
     def test_memory_scales_with_dimension(self):
         """Test memory estimation scales with dimension."""
-        config_2d = BackendConfig(n_vertices=5000, dimension=2)
-        config_3d = BackendConfig(n_vertices=5000, dimension=3)
+        config_2d = BackendConfig(n_vertices=5000, n_components=2)
+        config_3d = BackendConfig(n_vertices=5000, n_components=3)
 
         memory_2d = estimate_memory_usage(config_2d)
         memory_3d = estimate_memory_usage(config_3d)
@@ -130,12 +130,12 @@ class TestMemoryEstimation:
     def test_memory_estimation_realistic(self):
         """Test memory estimates are realistic."""
         # Small graph should use reasonable memory
-        small_config = BackendConfig(n_vertices=1000, dimension=2)
+        small_config = BackendConfig(n_vertices=1000, n_components=2)
         small_memory = estimate_memory_usage(small_config)
         assert small_memory < 1.0  # Less than 1GB
 
         # Large graph should use more memory but not excessive
-        large_config = BackendConfig(n_vertices=100000, dimension=3)
+        large_config = BackendConfig(n_vertices=100000, n_components=3)
         large_memory = estimate_memory_usage(large_config)
         assert 1.0 < large_memory < 100.0  # Between 1-100GB
 
