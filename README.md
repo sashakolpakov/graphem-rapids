@@ -11,6 +11,9 @@
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"/>
   </a>
+  <a href="https://pepy.tech/projects/graphem-rapids">
+    <img src="https://static.pepy.tech/personalized-badge/graphem-rapids?period=total&units=ABBREVIATION&left_color=GREY&right_color=BLUE&left_text=downloads" alt="PyPI Downloads">
+  </a>
   <a href="https://pytorch.org/">
     <img src="https://img.shields.io/badge/PyTorch-2.0+-red.svg" alt="PyTorch 2.0+"/>
   </a>
