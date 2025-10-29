@@ -89,7 +89,8 @@ embedder = gr.GraphEmbedderPyTorch(
     L_min=1.0,      # Minimum spring length
     k_attr=0.2,     # Attraction constant
     k_inter=0.5,    # Intersection repulsion constant
-    n_neighbors=10  # Number of nearest neighbors for intersection detection
+    n_neighbors=10, # Number of nearest neighbors for intersection detection
+    batch_size=1024 # Manual batch size (None for automatic)
 )
 
 # Force RAPIDS cuVS backend (for large graphs > 100K vertices)
@@ -97,7 +98,8 @@ embedder = gr.GraphEmbedderCuVS(
     adjacency,
     n_components=3,
     index_type='ivf_flat',  # 'auto', 'brute_force', 'ivf_flat', 'ivf_pq'
-    sample_size=1024        # Larger sample size for better accuracy
+    sample_size=1024,       # Larger sample size for better accuracy
+    batch_size=2048         # Manual batch size (None for automatic)
 )
 ```
 
@@ -228,23 +230,38 @@ with MemoryManager(cleanup_on_exit=True):
     # GPU memory automatically cleaned up on exit
 ```
 
-### Chunked Processing for Large Graphs
+### Batch Size Configuration for Large Graphs
 ```python
+# Automatic batch size selection (default, recommended)
+embedder = gr.GraphEmbedderPyTorch(
+    adjacency,
+    n_components=3,
+    batch_size=None,        # Automatic selection based on available memory
+    memory_efficient=True
+)
+
+# Manual batch size specification for fine-tuned control
+embedder = gr.GraphEmbedderPyTorch(
+    adjacency,
+    n_components=3,
+    batch_size=1024,        # Custom batch size for memory management
+    memory_efficient=True
+)
+
+# Calculate optimal batch size programmatically
 from graphem_rapids.utils.memory_management import get_optimal_chunk_size
 
-# Calculate optimal chunk size based on available memory
-chunk_size = get_optimal_chunk_size(
+optimal_batch = get_optimal_chunk_size(
     n_vertices=1000000,
     n_components=3,
     backend='pytorch'  # or 'pykeops', 'cuvs'
 )
-print(f"Optimal chunk size: {chunk_size}")
+print(f"Optimal batch size: {optimal_batch}")
 
-# PyTorch backend handles chunking automatically
 embedder = gr.GraphEmbedderPyTorch(
     adjacency,
     n_components=3,
-    memory_efficient=True
+    batch_size=optimal_batch
 )
 ```
 
@@ -256,6 +273,7 @@ embedder = gr.GraphEmbedderCuVS(
     n_components=3,
     index_type='ivf_pq',  # 'auto', 'brute_force', 'ivf_flat', 'ivf_pq'
     sample_size=2048,     # Larger samples for accuracy (vs 1024 default)
+    batch_size=4096,      # Manual batch size (None for automatic)
     n_neighbors=20,       # Number of nearest neighbors for intersection detection
     L_min=1.0,            # Spring parameters
     k_attr=0.2,
@@ -267,6 +285,10 @@ embedder = gr.GraphEmbedderCuVS(
 # - 'brute_force': Exact KNN, best for < 100K vertices
 # - 'ivf_flat': Good balance for 100K-1M vertices
 # - 'ivf_pq': Memory-efficient for > 1M vertices
+
+# Batch size guide:
+# - None (default): Automatic selection based on available memory (recommended)
+# - Custom value: Fine-tune memory usage for specific hardware constraints
 ```
 
 ## License

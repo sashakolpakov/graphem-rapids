@@ -69,6 +69,7 @@ class GraphEmbedderCuVS:
         k_inter=0.5,
         n_neighbors=10,
         sample_size=1024,
+        batch_size=None,
         index_type='auto',
         dtype=np.float32,
         verbose=True,
@@ -95,6 +96,9 @@ class GraphEmbedderCuVS:
             Number of nearest neighbors for intersection detection.
         sample_size : int, default=1024
             Sample size for kNN computation (larger for cuVS).
+        batch_size : int, optional
+            Batch size for processing. If None, automatically selects based on available memory.
+            Can be manually set (e.g., batch_size=1024) for custom memory management.
         index_type : str, default='auto'
             cuVS index type ('brute_force', 'ivf_flat', 'ivf_pq', 'auto').
         dtype : numpy.dtype, default=np.float32
@@ -142,6 +146,7 @@ class GraphEmbedderCuVS:
         self.k_attr = k_attr
         self.k_inter = k_inter
         self.n_neighbors = n_neighbors
+        self.batch_size = batch_size  # None for automatic, or user-defined value
 
         # Calculate number of edges for sample size validation
         self.n_edges = len(edges)
@@ -154,13 +159,19 @@ class GraphEmbedderCuVS:
         self.edges = cp.asarray(edges, dtype=cp.int32)
 
         # Memory management for large datasets
-        self.chunk_size = get_optimal_chunk_size(self.n, self.n_components)
+        # Use user-defined batch_size if provided, otherwise calculate optimal one automatically
+        if self.batch_size is None:
+            self.batch_size = get_optimal_chunk_size(self.n, self.n_components)
+            if self.verbose:
+                self.logger.info("Using automatic batch size: %d", self.batch_size)
+        else:
+            if self.verbose:
+                self.logger.info("Using user-defined batch size: %d", self.batch_size)
 
         if self.verbose:
             self.logger.info("Initialized GraphEmbedderCuVS")
             self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.n_components)
             self.logger.info("Index type: %s", self.index_type)
-            self.logger.info("Chunk size: %d", self.chunk_size)
 
         # Compute initial embedding
         self.positions = self._compute_laplacian_embedding()
@@ -271,13 +282,13 @@ class GraphEmbedderCuVS:
         with MemoryManager():
             try:
                 if index_type == 'brute_force':
-                    self.knn_index = brute_force.build(self.positions, metric='l2')
+                    self.knn_index = brute_force.build(self.positions, metric='sqeuclidean')
                 elif index_type == 'ivf_flat':
                     # Build IVF-Flat index with automatic parameter selection
                     n_lists = min(int(np.sqrt(self.n)), 16384)
                     self.knn_index = ivf_flat.build(
                         self.positions,
-                        metric='l2',
+                        metric='sqeuclidean',
                         n_lists=n_lists
                     )
                 elif index_type == 'ivf_pq':
@@ -286,7 +297,7 @@ class GraphEmbedderCuVS:
                     pq_dim = min(self.n_components, 64)
                     self.knn_index = ivf_pq.build(
                         self.positions,
-                        metric='l2',
+                        metric='sqeuclidean',
                         n_lists=n_lists,
                         pq_dim=pq_dim,
                         pq_bits=8
@@ -396,7 +407,7 @@ class GraphEmbedderCuVS:
     ):
         """Fallback KNN search with chunked processing."""
         n_samples = sampled_midpoints.shape[0]
-        chunk_size = min(self.chunk_size, n_samples)
+        chunk_size = min(self.batch_size, n_samples)
 
         all_indices = []
         sampled_indices = cp.arange(n_samples)

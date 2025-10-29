@@ -59,6 +59,7 @@ class GraphEmbedderPyTorch:
         k_inter=0.5,
         n_neighbors=10,
         sample_size=256,
+        batch_size=None,
         memory_efficient=True,
         verbose=True,
         logger_instance=None,
@@ -89,6 +90,9 @@ class GraphEmbedderPyTorch:
             Number of nearest neighbors for intersection detection.
         sample_size : int, default=256
             Sample size for kNN computation.
+        batch_size : int, optional
+            Batch size for processing. If None, automatically selects based on available memory.
+            Can be manually set (e.g., batch_size=1024) for custom memory management.
         memory_efficient : bool, default=True
             Use memory-efficient algorithms for large graphs.
         verbose : bool, default=True
@@ -133,6 +137,7 @@ class GraphEmbedderPyTorch:
         self.k_inter = k_inter
         self.n_neighbors = n_neighbors
         self.memory_efficient = memory_efficient
+        self.batch_size = batch_size  # None for automatic, or user-defined value
 
         # Validate parameters
         if n_components <= 0:
@@ -156,12 +161,20 @@ class GraphEmbedderPyTorch:
         # Memory management - detect backend capability
         self._has_pykeops = self._check_pykeops_availability()
         backend_type = 'pykeops' if self._has_pykeops else 'torch'
-        self.chunk_size = get_optimal_chunk_size(self.n, self.n_components, backend=backend_type)
+
+        # Use user-defined batch_size if provided, otherwise calculate optimal one automatically
+        if self.batch_size is None:
+            self.batch_size = get_optimal_chunk_size(self.n, self.n_components, backend=backend_type)
+            if self.verbose:
+                self.logger.info("Using automatic batch size: %d", self.batch_size)
+        else:
+            if self.verbose:
+                self.logger.info("Using user-defined batch size: %d", self.batch_size)
+
         if self.verbose:
             self.logger.info("Initialized GraphEmbedderPyTorch on %s", self.device)
             self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.n_components)
             self.logger.info("KNN backend: %s", backend_type)
-            self.logger.info("Chunk size: %d", self.chunk_size)
 
         # Compute initial embedding
         self._positions = self._compute_laplacian_embedding()
@@ -262,8 +275,8 @@ class GraphEmbedderPyTorch:
         int
             Optimal chunk size.
         """
-        # Start with base chunk size
-        base_chunk_size = self.chunk_size
+        # Start with base batch size
+        base_chunk_size = self.batch_size
 
         # Adaptive chunk sizing based on available GPU memory
         if self.device.type == 'cuda':
