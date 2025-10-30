@@ -43,7 +43,7 @@ from .visualization import (
 from .datasets import load_dataset
 
 # Version info
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 
 # Backend availability flags
 _TORCH_AVAILABLE = False
