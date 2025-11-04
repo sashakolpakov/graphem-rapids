@@ -14,7 +14,8 @@ from graphem_rapids.generators import (
     generate_ba,
     generate_sbm,
     generate_bipartite_graph,
-    generate_complete_bipartite_graph
+    generate_complete_bipartite_graph,
+    generate_delaunay_triangulation
 )
 
 
@@ -258,6 +259,45 @@ class TestGenerators:
         # Bottom set nodes should each have degree n_top
         bottom_degrees = degrees[n_top:]
         assert np.all(bottom_degrees == n_top)
+
+    @pytest.mark.fast
+    def test_delaunay_triangulation(self):
+        """Test Delaunay triangulation graph generator."""
+        n = 50
+        adjacency = generate_delaunay_triangulation(n=n, seed=42)
+
+        assert sp.issparse(adjacency)
+        assert adjacency.shape == (n, n)
+        assert adjacency.dtype in [np.int32, np.int64]
+
+        # Check symmetry
+        assert (adjacency != adjacency.T).nnz == 0
+
+        # Check no self loops
+        assert adjacency.diagonal().sum() == 0
+
+        # Delaunay triangulation should be connected for random points
+        # Check that there are edges
+        assert adjacency.nnz > 0
+
+    @pytest.mark.fast
+    def test_delaunay_triangulation_reproducibility(self):
+        """Test that Delaunay triangulation is reproducible with same seed."""
+        adj1 = generate_delaunay_triangulation(n=30, seed=123)
+        adj2 = generate_delaunay_triangulation(n=30, seed=123)
+
+        # Should be identical
+        assert (adj1 != adj2).nnz == 0
+
+    @pytest.mark.fast
+    def test_delaunay_triangulation_planarity(self):
+        """Test that Delaunay triangulation produces planar graph."""
+        n = 40
+        adjacency = generate_delaunay_triangulation(n=n, seed=42)
+
+        # For a planar graph with n vertices: edges <= 3n - 6
+        num_edges = adjacency.nnz // 2  # Divide by 2 for undirected graph
+        assert num_edges <= 3 * n - 6, "Delaunay triangulation should produce planar graph"
 
     @pytest.mark.fast
     def test_adjacency_format(self):

@@ -8,6 +8,7 @@ All generators return sparse adjacency matrices instead of simple edge lists.
 import numpy as np
 import networkx as nx
 import scipy.sparse as sp
+from scipy.spatial import Delaunay
 
 
 def _nx_to_sparse_adjacency(G):
@@ -347,7 +348,7 @@ def generate_relaxed_caveman(l=10, k=10, p=0.1, seed=0):
     """
     Generate a relaxed caveman graph with l cliques of size k,
     and a rewiring probability p.
-    
+
     Parameters:
       l: int
          Number of cliques.
@@ -357,11 +358,48 @@ def generate_relaxed_caveman(l=10, k=10, p=0.1, seed=0):
          Rewiring probability.
       seed: int
          Random seed for reproducibility.
-         
+
     Returns:
       adjacency: scipy.sparse.csr_matrix
          Sparse adjacency matrix (n × n).
     """
     np.random.seed(seed)
     G = nx.relaxed_caveman_graph(l, k, p)
+    return _nx_to_sparse_adjacency(G)
+
+
+def generate_delaunay_triangulation(n=100, seed=0):
+    """
+    Generate a Delaunay triangulation graph.
+
+    Vertices are randomly placed in a 2D unit square, and edges are created
+    based on the Delaunay triangulation of these points. The resulting graph
+    has planar structure with triangular faces.
+
+    Parameters:
+      n: int
+         Number of vertices.
+      seed: int
+         Random seed for reproducibility.
+
+    Returns:
+      adjacency: scipy.sparse.csr_matrix
+         Sparse adjacency matrix (n × n).
+    """
+    # Generate random points in 2D unit square
+    rng = np.random.RandomState(seed)
+    pts = rng.rand(n, 2)
+
+    # Compute Delaunay triangulation
+    tri = Delaunay(pts)
+
+    # Build graph from triangulation
+    G = nx.Graph()
+    G.add_nodes_from(range(n))
+
+    # Each simplex is a triangle (i, j, k)
+    for simplex in tri.simplices:
+        i, j, k = simplex
+        G.add_edges_from([(i, j), (j, k), (k, i)])
+
     return _nx_to_sparse_adjacency(G)
