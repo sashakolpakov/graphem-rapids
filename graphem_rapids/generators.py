@@ -196,10 +196,35 @@ def generate_road_network(width=30, height=30):
     return _nx_to_sparse_adjacency(G)
 
 
-def generate_bipartite_graph(n_top=50, n_bottom=100):
+def generate_bipartite_graph(n_top=50, n_bottom=100, p=0.1, seed=0):
     """
     Generate a random bipartite graph.
-    
+
+    Parameters:
+      n_top: int
+         Number of vertices in the top set.
+      n_bottom: int
+         Number of vertices in the bottom set.
+      p: float
+         Probability of edge between any vertex in top set and any vertex in bottom set.
+      seed: int
+         Random seed for reproducibility.
+
+    Returns:
+      adjacency: scipy.sparse.csr_matrix
+         Sparse adjacency matrix (n × n).
+    """
+    G = nx.bipartite.random_graph(n_top, n_bottom, p, seed=seed)
+    return _nx_to_sparse_adjacency(G)
+
+
+def generate_complete_bipartite_graph(n_top=50, n_bottom=100):
+    """
+    Generate a complete bipartite graph.
+
+    In a complete bipartite graph, every vertex in the top set is connected
+    to every vertex in the bottom set, resulting in n_top * n_bottom edges.
+
     Parameters:
       n_top: int
          Number of vertices in the top set.
@@ -210,7 +235,8 @@ def generate_bipartite_graph(n_top=50, n_bottom=100):
       adjacency: scipy.sparse.csr_matrix
          Sparse adjacency matrix (n × n).
     """
-    G = nx.bipartite.random_graph(n_top, n_bottom, 0.1)
+    n_top, n_bottom = int(n_top), int(n_bottom)
+    G = nx.complete_bipartite_graph(n_top, n_bottom)
     return _nx_to_sparse_adjacency(G)
 
 

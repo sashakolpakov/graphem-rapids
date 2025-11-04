@@ -27,6 +27,7 @@ from .generators import (
     generate_power_cluster,
     generate_random_regular,
     generate_bipartite_graph,
+    generate_complete_bipartite_graph,
     generate_relaxed_caveman
 )
 from .influence import (
@@ -190,6 +191,7 @@ __all__ = [
     'generate_power_cluster',
     'generate_random_regular',
     'generate_bipartite_graph',
+    'generate_complete_bipartite_graph',
     'generate_relaxed_caveman',
 
     # Influence maximization
