@@ -17,6 +17,9 @@
   <a href="https://rapids.ai/">
     <img src="https://img.shields.io/badge/RAPIDS-cuVS-76B900.svg" alt="RAPIDS cuVS"/>
   </a>
+  <a href="https://pepy.tech/projects/graphem-rapids">
+    <img alt="Pepy Total Downloads" src="https://img.shields.io/pepy/dt/graphem-rapids">
+  </a>
 </p>
 
 GraphEm Rapids is a high-performance implementation of the [GraphEm](https://github.com/sashakolpakov/graphem) graph embedding library, leveraging PyTorch and RAPIDS cuVS for enhanced scalability and GPU acceleration. It uses a force-directed layout algorithm with geometric intersection detection to produce high-quality graph embeddings that correlate strongly with network centrality measures.
