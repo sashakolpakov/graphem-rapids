@@ -52,23 +52,18 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
     """
     logger.info("Running benchmark with %s...", graph_generator.__name__)
 
-    # Generate the graph
+    # Generate the graph (returns sparse adjacency matrix)
     start_time = time.time()
-    edges = graph_generator(**graph_params)
+    adjacency = graph_generator(**graph_params)
 
     # Count vertices and edges
-    if len(edges) > 0:
-        n = max(np.max(edges) + 1, graph_params.get('n', 0))
-    else:
-        n = graph_params.get('n', 0)
-    m = len(edges)
+    n = adjacency.shape[0]
+    m = adjacency.nnz // 2  # Divide by 2 for undirected graphs
 
     logger.info("Generated graph with %d vertices and %d edges", n, m)
 
     # Convert to NetworkX graph for centrality calculations
-    nx_graph = nx.Graph()
-    nx_graph.add_nodes_from(range(n))
-    nx_graph.add_edges_from(edges)
+    nx_graph = nx.from_scipy_sparse_array(adjacency)
 
     # Calculate centrality measures
     logger.info("Calculating centrality measures...")
@@ -107,12 +102,12 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
     for i, val in node_load_dict.items():
         node_load[i] = val
 
-    # Create embedder - using PyTorch backend for now
+    # Create embedder
     logger.info("Creating embedder...")
 
-    # Convert edges to adjacency matrix
-    adjacency = sp.coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
-    adjacency = adjacency.tocsr()
+    # Ensure adjacency is in CSR format
+    if not sp.isspmatrix_csr(adjacency):
+        adjacency = adjacency.tocsr()
 
     embedder = GraphEmbedderPyTorch(
         adjacency=adjacency,
@@ -276,23 +271,18 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
     """
     logger.info("Running influence benchmark with %s...", graph_generator.__name__)
 
-    # Generate the graph
+    # Generate the graph (returns sparse adjacency matrix)
     start_time = time.time()
-    edges = graph_generator(**graph_params)
+    adjacency = graph_generator(**graph_params)
 
     # Count vertices and edges
-    if len(edges) > 0:
-        n = max(np.max(edges) + 1, graph_params.get('n', 0))
-    else:
-        n = graph_params.get('n', 0)
-    m = len(edges)
+    n = adjacency.shape[0]
+    m = adjacency.nnz // 2  # Divide by 2 for undirected graphs
 
     logger.info("Generated graph with %d vertices and %d edges", n, m)
 
     # Convert to NetworkX graph
-    nx_graph = nx.Graph()
-    nx_graph.add_nodes_from(range(n))
-    nx_graph.add_edges_from(edges)
+    nx_graph = nx.from_scipy_sparse_array(adjacency)
 
     # Default layout parameters
     if layout_params is None:
@@ -307,9 +297,13 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
 
     # Create embedder
     logger.info("Creating embedder...")
+
+    # Ensure adjacency is in CSR format
+    if not sp.isspmatrix_csr(adjacency):
+        adjacency = adjacency.tocsr()
+
     embedder = GraphEmbedderPyTorch(
-        edges=edges,
-        n_vertices=n,
+        adjacency=adjacency,
         n_components=dim,
         verbose=True,
         **layout_params
