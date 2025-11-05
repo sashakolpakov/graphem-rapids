@@ -188,6 +188,40 @@ print(f"Estimated influence: {influence:.1f} nodes ({influence/len(G)*100:.1f}%)
 greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
 ```
 
+## Graph Generators
+
+GraphEm Rapids includes generators for various graph types, all returning scipy sparse adjacency matrices:
+
+```python
+import graphem_rapids as gr
+
+# Random graphs
+adj = gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+adj = gr.generate_random_regular(n=100, d=3, seed=42)
+
+# Scale-free and small-world
+adj = gr.generate_ba(n=300, m=3, seed=42)  # Barabási-Albert
+adj = gr.generate_ws(n=1000, k=6, p=0.3, seed=42)  # Watts-Strogatz
+adj = gr.generate_scale_free(n=100, seed=42)
+
+# Community structures
+adj = gr.generate_sbm(n_per_block=75, num_blocks=4, p_in=0.15, p_out=0.01, seed=42)
+adj = gr.generate_caveman(l=10, k=10)
+adj = gr.generate_relaxed_caveman(l=10, k=10, p=0.1, seed=42)
+
+# Bipartite graphs
+adj = gr.generate_bipartite_graph(n_top=50, n_bottom=100, p=0.2, seed=42)
+adj = gr.generate_complete_bipartite_graph(n_top=50, n_bottom=100)
+
+# Geometric graphs
+adj = gr.generate_geometric(n=100, radius=0.2, dim=2, seed=42)
+adj = gr.generate_delaunay_triangulation(n=100, seed=42)
+adj = gr.generate_road_network(width=30, height=30)  # 2D grid
+
+# Tree structures
+adj = gr.generate_balanced_tree(r=2, h=10)
+```
+
 ## Testing
 
 Run the test suite:
