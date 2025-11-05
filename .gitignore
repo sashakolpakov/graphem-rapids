@@ -233,3 +233,6 @@ datasets/
 
 # macOS
 .DS_Store
+
+# Development folder
+dev/

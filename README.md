@@ -157,7 +157,7 @@ seeds = gr.graphem_seed_selection(embedder, k=10)
 # Evaluate with Independent Cascade model
 import networkx as nx
 G = nx.from_scipy_sparse_array(adjacency)
-influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations=100)
+influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=100)
 
 # Compare with greedy (slow, optimal)
 greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
