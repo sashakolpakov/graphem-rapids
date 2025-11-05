@@ -22,287 +22,188 @@
   </a>
 </p>
 
-GraphEm Rapids is a high-performance implementation of the [GraphEm](https://github.com/sashakolpakov/graphem) graph embedding library, leveraging PyTorch and RAPIDS cuVS for enhanced scalability and GPU acceleration. It uses a force-directed layout algorithm with geometric intersection detection to produce high-quality graph embeddings that correlate strongly with network centrality measures.
+High-performance [GraphEm](https://github.com/sashakolpakov/graphem) implementation using PyTorch and RAPIDS cuVS. Force-directed layout with geometric intersection detection produces embeddings that correlate strongly with centrality measures.
 
-## Key Features
+## Features
 
-- **Unified Adjacency Matrix Interface**: Simple, consistent API accepting scipy sparse matrices
-- **Multiple Backends**: PyTorch (CUDA/CPU), RAPIDS cuVS, with automatic selection
-- **Automatic Backend Selection**: Intelligently chooses optimal backend based on graph size and hardware
-- **Large-Scale Support**: Handles graphs with millions of vertices via RAPIDS cuVS
-- **Memory Efficient**: Adaptive chunking, memory monitoring, and GPU memory management
-- **GPU Accelerated**: Full CUDA support with PyTorch and RAPIDS cuVS indices
-- **Flexible Parameters**: Renamed to sklearn-style `n_components` and `n_neighbors` for consistency
+- **Unified API**: Scipy sparse adjacency matrices, sklearn-style parameters (`n_components`, `n_neighbors`)
+- **Multiple Backends**: PyTorch (1K-100K vertices), RAPIDS cuVS (100K+ vertices), automatic selection
+- **GPU Acceleration**: CUDA support, memory-efficient chunking, automatic CPU fallback
+- **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
+- **Influence Maximization**: Fast embedding-based seed selection
 
 ## Installation
 
-### Basic Installation (PyTorch backend)
 ```bash
-pip install graphem-rapids
-```
-
-### With CUDA Support
-```bash
-pip install graphem-rapids[cuda]
-```
-
-### With Full RAPIDS Support
-```bash
-pip install graphem-rapids[rapids]
-# or for everything
-pip install graphem-rapids[all]
-```
-
-### Development Installation
-```bash
-git clone https://github.com/sashakolpakov/graphem-rapids.git
-cd graphem-rapids
-pip install -e .
+pip install graphem-rapids              # PyTorch backend
+pip install graphem-rapids[cuda]        # + CUDA support
+pip install graphem-rapids[rapids]      # + RAPIDS cuVS
+pip install graphem-rapids[all]         # Everything
 ```
 
 ## Quick Start
 
-### Basic Usage with Automatic Backend Selection
 ```python
 import graphem_rapids as gr
 
-# Generate a graph (returns sparse adjacency matrix)
+# Generate graph (returns sparse adjacency matrix)
 adjacency = gr.erdos_renyi_graph(n=1000, p=0.01)
 
-# Create embedder with automatic backend selection
+# Create embedder (automatic backend selection)
 embedder = gr.create_graphem(adjacency, n_components=3)
 
-# Run force-directed layout
+# Run layout
 embedder.run_layout(num_iterations=50)
 
-# Get final positions
-positions = embedder.get_positions()  # numpy array (n_vertices, n_components)
-
-# Display visualization (2D or 3D)
-embedder.display_layout()
+# Get positions and visualize
+positions = embedder.get_positions()  # numpy array (n, d)
+embedder.display_layout()             # 2D or 3D plot
 ```
 
-### Explicit Backend Selection
+## Backend Selection
+
+### Automatic (Recommended)
 ```python
-# Force PyTorch backend with custom parameters
+embedder = gr.create_graphem(adjacency, n_components=3)
+```
+
+### Explicit PyTorch
+```python
 embedder = gr.GraphEmbedderPyTorch(
-    adjacency,
-    n_components=3,
-    device='cuda',  # or 'cpu'
-    L_min=1.0,      # Minimum spring length
-    k_attr=0.2,     # Attraction constant
-    k_inter=0.5,    # Intersection repulsion constant
-    n_neighbors=10, # Number of nearest neighbors for intersection detection
-    batch_size=1024 # Manual batch size (None for automatic)
-)
-
-# Force RAPIDS cuVS backend (for large graphs > 100K vertices)
-embedder = gr.GraphEmbedderCuVS(
-    adjacency,
-    n_components=3,
-    index_type='ivf_flat',  # 'auto', 'brute_force', 'ivf_flat', 'ivf_pq'
-    sample_size=1024,       # Larger sample size for better accuracy
-    batch_size=2048         # Manual batch size (None for automatic)
+    adjacency, n_components=3, device='cuda',
+    L_min=1.0, k_attr=0.2, k_inter=0.5, n_neighbors=10,
+    batch_size=None  # Automatic (or manual: 1024)
 )
 ```
 
-### Backend Information
+### Explicit RAPIDS cuVS
 ```python
-# Check available backends
-info = gr.get_backend_info()
-print(f"CUDA available: {info['cuda_available']}")
-print(f"Recommended: {info['recommended_backend']}")
+embedder = gr.GraphEmbedderCuVS(
+    adjacency, n_components=3,
+    index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
+    sample_size=1024, batch_size=None
+)
 ```
 
-## Architecture
+**Index Types**: `brute_force` (<100K), `ivf_flat` (100K-1M), `ivf_pq` (>1M vertices)
 
-GraphEm Rapids provides multiple computational backends:
-
-### PyTorch Backend
-- **Best for**: Medium-scale graphs (1K-100K vertices)
-- **Features**: CUDA acceleration, memory-efficient chunking
-- **Fallback**: Automatic CPU mode when GPU unavailable
-
-### RAPIDS cuVS Backend
-- **Best for**: Large-scale graphs (100K+ vertices)
-- **Features**: Optimized KNN with cuVS indices, CuPy operations
-- **Index Types**: Brute force, IVF-Flat, IVF-PQ (automatic selection)
-
-### Automatic Selection
-The `create_graphem()` function automatically selects the optimal backend based on:
-- Dataset size (number of vertices)
-- Available hardware (CUDA, RAPIDS)
-- Memory constraints
-- User preferences
+### Check Backends
+```python
+info = gr.get_backend_info()
+print(f"CUDA: {info['cuda_available']}, Recommended: {info['recommended_backend']}")
+```
 
 ## Configuration
 
-### Environment Variables
+**Environment Variables:**
 ```bash
-export GRAPHEM_BACKEND=pytorch     # Force backend
-export GRAPHEM_PREFER_GPU=true     # Prefer GPU backends
-export GRAPHEM_MEMORY_LIMIT=8      # Memory limit in GB
-export GRAPHEM_VERBOSE=true        # Verbose logging
-export GRAPHEM_RAPIDS_QUIET=true   # Suppress startup messages
+export GRAPHEM_BACKEND=pytorch        # Force backend
+export GRAPHEM_PREFER_GPU=true        # Prefer GPU
+export GRAPHEM_MEMORY_LIMIT=8         # GB
+export GRAPHEM_VERBOSE=true
 ```
 
-### Programmatic Configuration
+**Programmatic:**
 ```python
 from graphem_rapids.utils.backend_selection import BackendConfig, get_optimal_backend
 
-# Create configuration for backend selection
-config = BackendConfig(
-    n_vertices=50000,
-    n_components=3,
-    force_backend='cuvs',  # or 'pytorch', 'auto', 'cpu'
-    memory_limit=16.0,     # GB
-    prefer_gpu=True,
-    verbose=True
-)
-
-# Get recommended backend
+config = BackendConfig(n_vertices=50000, force_backend='cuvs', memory_limit=16.0)
 backend = get_optimal_backend(config)
-print(f"Recommended backend: {backend}")
+embedder = gr.create_graphem(adjacency, backend=backend)
+```
 
-# Create embedder with specific backend
-embedder = gr.create_graphem(adjacency, n_components=3, backend=backend)
+## Graph Generators
+
+All generators return scipy sparse adjacency matrices:
+
+```python
+# Random
+gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+gr.generate_random_regular(n=100, d=3, seed=42)
+
+# Scale-free & small-world
+gr.generate_ba(n=300, m=3, seed=42)             # Barabási-Albert
+gr.generate_ws(n=1000, k=6, p=0.3, seed=42)     # Watts-Strogatz
+gr.generate_scale_free(n=100, seed=42)
+
+# Community structures
+gr.generate_sbm(n_per_block=75, num_blocks=4, p_in=0.15, p_out=0.01, seed=42)
+gr.generate_caveman(l=10, k=10)
+gr.generate_relaxed_caveman(l=10, k=10, p=0.1, seed=42)
+
+# Bipartite
+gr.generate_bipartite_graph(n_top=50, n_bottom=100, p=0.2, seed=42)
+gr.generate_complete_bipartite_graph(n_top=50, n_bottom=100)
+
+# Geometric
+gr.generate_geometric(n=100, radius=0.2, dim=2, seed=42)
+gr.generate_delaunay_triangulation(n=100, seed=42)
+gr.generate_road_network(width=30, height=30)   # 2D grid
+
+# Trees
+gr.generate_balanced_tree(r=2, h=10)
 ```
 
 ## Influence Maximization
 
-GraphEm Rapids includes fast influence maximization via radial distance in the embedding space:
-
 ```python
-# Generate graph and compute embedding
 adjacency = gr.erdos_renyi_graph(n=1000, p=0.01)
 embedder = gr.create_graphem(adjacency, n_components=3)
 embedder.run_layout(num_iterations=50)
 
-# Select influential nodes using embedding-based method (fast)
+# Fast: embedding-based selection
 seeds = gr.graphem_seed_selection(embedder, k=10)
 
-# Evaluate influence spread using Independent Cascade model
+# Evaluate with Independent Cascade model
 import networkx as nx
 G = nx.from_scipy_sparse_array(adjacency)
 influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations=100)
-print(f"Estimated influence: {influence:.1f} nodes ({influence/len(G)*100:.1f}%)")
 
-# Compare with greedy seed selection (slow but optimal)
+# Compare with greedy (slow, optimal)
 greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
 ```
 
-## Testing
+## Advanced
 
-Run the test suite:
-```bash
-pytest
-```
-
-Test specific backends:
-```bash
-pytest tests/test_pytorch_backend.py
-pytest tests/test_cuvs_backend.py
-```
-
-## Benchmarking
-
-Run performance benchmarks:
-```bash
-python benchmarks/run_benchmarks.py
-```
-
-Compare backends:
-```bash
-python benchmarks/compare_backends.py --sizes 1000,10000,100000
-```
-
-## Advanced Usage
-
-### Custom Memory Management
+### Memory Management
 ```python
 from graphem_rapids.utils.memory_management import MemoryManager, get_gpu_memory_info
 
-# Check available GPU memory
 mem_info = get_gpu_memory_info()
-print(f"GPU memory: {mem_info['free']:.1f}GB free / {mem_info['total']:.1f}GB total")
+print(f"GPU: {mem_info['free']:.1f}GB free / {mem_info['total']:.1f}GB total")
 
-# Use context manager for automatic cleanup
 with MemoryManager(cleanup_on_exit=True):
-    embedder = gr.create_graphem(adjacency, n_components=3)
-    embedder.run_layout(num_iterations=50)
-    # GPU memory automatically cleaned up on exit
+    embedder = gr.create_graphem(adjacency)
+    embedder.run_layout(50)
 ```
 
-### Batch Size Configuration for Large Graphs
+### Batch Size Tuning
 ```python
-# Automatic batch size selection (default, recommended)
-embedder = gr.GraphEmbedderPyTorch(
-    adjacency,
-    n_components=3,
-    batch_size=None,        # Automatic selection based on available memory
-    memory_efficient=True
-)
-
-# Manual batch size specification for fine-tuned control
-embedder = gr.GraphEmbedderPyTorch(
-    adjacency,
-    n_components=3,
-    batch_size=1024,        # Custom batch size for memory management
-    memory_efficient=True
-)
-
-# Calculate optimal batch size programmatically
 from graphem_rapids.utils.memory_management import get_optimal_chunk_size
 
-optimal_batch = get_optimal_chunk_size(
-    n_vertices=1000000,
-    n_components=3,
-    backend='pytorch'  # or 'pykeops', 'cuvs'
-)
-print(f"Optimal batch size: {optimal_batch}")
+# Automatic (recommended)
+embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=None)
 
-embedder = gr.GraphEmbedderPyTorch(
-    adjacency,
-    n_components=3,
-    batch_size=optimal_batch
-)
+# Manual
+embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=1024)
+
+# Programmatic
+optimal = get_optimal_chunk_size(n_vertices=1000000, n_components=3, backend='pytorch')
+embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=optimal)
 ```
 
-### cuVS Index Configuration
-```python
-# Fine-tune RAPIDS cuVS backend for large-scale graphs
-embedder = gr.GraphEmbedderCuVS(
-    adjacency,
-    n_components=3,
-    index_type='ivf_pq',  # 'auto', 'brute_force', 'ivf_flat', 'ivf_pq'
-    sample_size=2048,     # Larger samples for accuracy (vs 1024 default)
-    batch_size=4096,      # Manual batch size (None for automatic)
-    n_neighbors=20,       # Number of nearest neighbors for intersection detection
-    L_min=1.0,            # Spring parameters
-    k_attr=0.2,
-    k_inter=0.5
-)
+## Testing & Benchmarking
 
-# Index type selection guide:
-# - 'auto': Automatic selection based on graph size (recommended)
-# - 'brute_force': Exact KNN, best for < 100K vertices
-# - 'ivf_flat': Good balance for 100K-1M vertices
-# - 'ivf_pq': Memory-efficient for > 1M vertices
-
-# Batch size guide:
-# - None (default): Automatic selection based on available memory (recommended)
-# - Custom value: Fine-tune memory usage for specific hardware constraints
+```bash
+pytest                                          # Run all tests
+pytest tests/test_pytorch_backend.py            # Specific backend
+python benchmarks/run_benchmarks.py             # Performance tests
+python benchmarks/compare_backends.py --sizes 1000,10000,100000
 ```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file.
 
 ## Citation
 
-If you use GraphEm in research, please cite our work [![arXiv](https://img.shields.io/badge/arXiv-2506.07435-b31b1b.svg)](https://arxiv.org/abs/2506.07435)
-
-**BibTeX:**
+[![arXiv](https://img.shields.io/badge/arXiv-2506.07435-b31b1b.svg)](https://arxiv.org/abs/2506.07435)
 
 ```bibtex
 @misc{kolpakov-rivin-2025fast,
@@ -316,6 +217,6 @@ If you use GraphEm in research, please cite our work [![arXiv](https://img.shiel
 }
 ```
 
-**APA Style:**
+## License
 
-Kolpakov, A., & Rivin, I. (2025). Fast Geometric Embedding for Node Influence Maximization. arXiv preprint arXiv:2506.07435.
+MIT License - see [LICENSE](LICENSE) file.

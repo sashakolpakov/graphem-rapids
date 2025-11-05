@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Benchmark functions**: Fixed TypeError in `benchmark_correlations()` and `run_influence_benchmark()`
+  - Replaced `len(edges)` with `adjacency.shape[0]` and `adjacency.nnz`
+  - Use `nx.from_scipy_sparse_array()` instead of manual graph construction
+  - Fixes "sparse array length is ambiguous" error when using benchmarks
+
+### Added
+- **Graph generators**: New generators for specialized graph types
+  - `generate_bipartite_graph(n_top, n_bottom, p, seed)` - Random bipartite with edge probability control
+  - `generate_complete_bipartite_graph(n_top, n_bottom)` - Complete bipartite K_{n,m}
+  - `generate_delaunay_triangulation(n, seed)` - Planar graphs from Delaunay triangulation
+- **Tests**: Comprehensive test coverage for all new generators
+
 ## [0.2.0] - 2025-10-30
 
 ### Added
