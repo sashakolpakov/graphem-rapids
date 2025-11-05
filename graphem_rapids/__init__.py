@@ -27,7 +27,9 @@ from .generators import (
     generate_power_cluster,
     generate_random_regular,
     generate_bipartite_graph,
-    generate_relaxed_caveman
+    generate_complete_bipartite_graph,
+    generate_relaxed_caveman,
+    generate_delaunay_triangulation
 )
 from .influence import (
     graphem_seed_selection,
@@ -190,7 +192,9 @@ __all__ = [
     'generate_power_cluster',
     'generate_random_regular',
     'generate_bipartite_graph',
+    'generate_complete_bipartite_graph',
     'generate_relaxed_caveman',
+    'generate_delaunay_triangulation',
 
     # Influence maximization
     'graphem_seed_selection',

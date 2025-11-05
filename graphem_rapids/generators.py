@@ -8,6 +8,7 @@ All generators return sparse adjacency matrices instead of simple edge lists.
 import numpy as np
 import networkx as nx
 import scipy.sparse as sp
+from scipy.spatial import Delaunay
 
 
 def _nx_to_sparse_adjacency(G):
@@ -196,10 +197,35 @@ def generate_road_network(width=30, height=30):
     return _nx_to_sparse_adjacency(G)
 
 
-def generate_bipartite_graph(n_top=50, n_bottom=100):
+def generate_bipartite_graph(n_top=50, n_bottom=100, p=0.1, seed=0):
     """
     Generate a random bipartite graph.
-    
+
+    Parameters:
+      n_top: int
+         Number of vertices in the top set.
+      n_bottom: int
+         Number of vertices in the bottom set.
+      p: float
+         Probability of edge between any vertex in top set and any vertex in bottom set.
+      seed: int
+         Random seed for reproducibility.
+
+    Returns:
+      adjacency: scipy.sparse.csr_matrix
+         Sparse adjacency matrix (n × n).
+    """
+    G = nx.bipartite.random_graph(n_top, n_bottom, p, seed=seed)
+    return _nx_to_sparse_adjacency(G)
+
+
+def generate_complete_bipartite_graph(n_top=50, n_bottom=100):
+    """
+    Generate a complete bipartite graph.
+
+    In a complete bipartite graph, every vertex in the top set is connected
+    to every vertex in the bottom set, resulting in n_top * n_bottom edges.
+
     Parameters:
       n_top: int
          Number of vertices in the top set.
@@ -210,7 +236,8 @@ def generate_bipartite_graph(n_top=50, n_bottom=100):
       adjacency: scipy.sparse.csr_matrix
          Sparse adjacency matrix (n × n).
     """
-    G = nx.bipartite.random_graph(n_top, n_bottom, 0.1)
+    n_top, n_bottom = int(n_top), int(n_bottom)
+    G = nx.complete_bipartite_graph(n_top, n_bottom)
     return _nx_to_sparse_adjacency(G)
 
 
@@ -321,7 +348,7 @@ def generate_relaxed_caveman(l=10, k=10, p=0.1, seed=0):
     """
     Generate a relaxed caveman graph with l cliques of size k,
     and a rewiring probability p.
-    
+
     Parameters:
       l: int
          Number of cliques.
@@ -331,11 +358,48 @@ def generate_relaxed_caveman(l=10, k=10, p=0.1, seed=0):
          Rewiring probability.
       seed: int
          Random seed for reproducibility.
-         
+
     Returns:
       adjacency: scipy.sparse.csr_matrix
          Sparse adjacency matrix (n × n).
     """
     np.random.seed(seed)
     G = nx.relaxed_caveman_graph(l, k, p)
+    return _nx_to_sparse_adjacency(G)
+
+
+def generate_delaunay_triangulation(n=100, seed=0):
+    """
+    Generate a Delaunay triangulation graph.
+
+    Vertices are randomly placed in a 2D unit square, and edges are created
+    based on the Delaunay triangulation of these points. The resulting graph
+    has planar structure with triangular faces.
+
+    Parameters:
+      n: int
+         Number of vertices.
+      seed: int
+         Random seed for reproducibility.
+
+    Returns:
+      adjacency: scipy.sparse.csr_matrix
+         Sparse adjacency matrix (n × n).
+    """
+    # Generate random points in 2D unit square
+    rng = np.random.RandomState(seed)
+    pts = rng.rand(n, 2)
+
+    # Compute Delaunay triangulation
+    tri = Delaunay(pts)
+
+    # Build graph from triangulation
+    G = nx.Graph()
+    G.add_nodes_from(range(n))
+
+    # Each simplex is a triangle (i, j, k)
+    for simplex in tri.simplices:
+        i, j, k = simplex
+        G.add_edges_from([(i, j), (j, k), (k, i)])
+
     return _nx_to_sparse_adjacency(G)
