@@ -452,8 +452,10 @@ class GraphEmbedderPyTorch:
 
         # Backend selection logic: PyKeOps is slower than PyTorch for high dimensions!
         # Use PyTorch for high-D, PyKeOps for low-D
+        # Also disable PyKeOps for small graphs due to kernel compilation overhead
         use_pykeops = (self._has_pykeops and
                       n_dims < 200 and
+                      n_query > 1000 and  # Only use PyKeOps for larger problems
                       self.device.type == 'cuda' and
                       self.dtype == torch.float32)  # PyKeOps doesn't work well with FP16
 
