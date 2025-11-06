@@ -62,17 +62,17 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
     # Configure the Independent Cascades model
     model = ep.IndependentCascadesModel(G)
     config = mc.Configuration()
-    
+
     # Set edge propagation probabilities
     for e in G.edges():
         config.add_edge_configuration("threshold", e, p)
-    
-    # Initialize the model with configuration
-    model.set_initial_status(config)
-    
+
     # Set initial seeds to infected state
     for seed in seeds:
         config.add_node_configuration("status", seed, 1)
+
+    # Initialize the model with configuration
+    model.set_initial_status(config)
     
     # Run the simulation
     iterations = model.iteration_bunch(iterations_count)
