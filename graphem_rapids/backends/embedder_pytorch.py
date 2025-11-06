@@ -569,6 +569,14 @@ class GraphEmbedderPyTorch:
             KNN indices as (n_query, k) tensor.
         """
         n_query = query_points.shape[0]
+
+        # Fast path: no chunking needed for small datasets
+        if n_query <= chunk_size:
+            distances = torch.cdist(query_points, reference_points, p=2)
+            _, knn_indices = torch.topk(distances, k, dim=1, largest=False)
+            return knn_indices
+
+        # Chunked processing for large datasets
         all_knn_indices = []
 
         for i in range(0, n_query, chunk_size):
@@ -578,7 +586,7 @@ class GraphEmbedderPyTorch:
             if n_query > 50000:  # Only log for large datasets
                 self.logger.info("Processing torch chunk %d/%d", i//chunk_size + 1, (n_query + chunk_size - 1)//chunk_size)
 
-            # Compute distances for this chunk (MUCH faster for high dimensions!)
+            # Compute distances for this chunk
             distances = torch.cdist(query_chunk, reference_points, p=2)
 
             # Find k nearest neighbors
@@ -588,8 +596,8 @@ class GraphEmbedderPyTorch:
             # Clean up intermediate tensors
             del distances
 
-            # Clear GPU memory periodically
-            if self.device.type == 'cuda' and i % (chunk_size * 10) == 0:
+            # Clear GPU memory periodically (only for very large datasets)
+            if self.device.type == 'cuda' and n_query > 10000 and i % (chunk_size * 10) == 0:
                 torch.cuda.empty_cache()
 
         return torch.cat(all_knn_indices, dim=0)

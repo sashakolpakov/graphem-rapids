@@ -11,7 +11,7 @@ def graphem_seed_selection(embedder, k, num_iterations=20):
     """
     Run the GraphEmbedder layout to get an embedding, then select
     k seeds by choosing the nodes with the highest radial distances.
-    
+
     Parameters:
         embedder: GraphEmbedder
             The initialized graph embedder object
@@ -19,21 +19,21 @@ def graphem_seed_selection(embedder, k, num_iterations=20):
             Number of seed nodes to select
         num_iterations: int
             Number of layout iterations to run
-    
+
     Returns:
         seeds: list
             List of k vertices selected as seeds
     """
     # Run the layout algorithm
     embedder.run_layout(num_iterations=num_iterations)
-    
+
     # Compute radial distances from the origin (0, 0, 0)
     positions = np.array(embedder.positions)
     radial_distances = np.linalg.norm(positions, axis=1)
-    
+
     # Select the k nodes with the highest radial distances
     seeds = np.argsort(-radial_distances)[:k]
-    
+
     return seeds.tolist()
 
 
@@ -42,7 +42,7 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
     Run NDlib's Independent Cascades model on graph G, starting with the given seeds,
     and return the estimated final influence (number of nodes in state 2) and
     the number of iterations executed.
-    
+
     Parameters:
         G: networkx.Graph
             The graph to run influence propagation on
@@ -52,7 +52,7 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
             Propagation probability
         iterations_count: int
             Maximum number of simulation iterations
-    
+
     Returns:
         influence: float
             The estimated influence (average number of influenced nodes)
@@ -67,19 +67,23 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
     for e in G.edges():
         config.add_edge_configuration("threshold", e, p)
 
-    # Set initial infected nodes (seeds)
+    # Set initial infected nodes using model initial configuration
     config.add_model_initial_configuration("Infected", seeds)
 
     # Initialize the model with configuration
     model.set_initial_status(config)
-    
+
     # Run the simulation
     iterations = model.iteration_bunch(iterations_count)
-    
-    # Get the number of nodes in state 2 (influenced) at the end
-    final_status = iterations[-1]['status']
-    influenced_count = sum(1 for node_state in final_status.values() if node_state == 2)
-    
+
+    # Use NDlib's build_trends to get node counts by status over time
+    trends = model.build_trends(iterations)
+
+    # Total influenced = maximum number of nodes that reached "Removed" state (2)
+    # This captures all nodes that were infected at any point
+    node_counts = trends[0]['trends']['node_count']
+    influenced_count = max(node_counts.get(2, [0]))  # State 2 = Removed (influenced)
+
     return influenced_count, len(iterations)
 
 
@@ -96,32 +100,32 @@ def greedy_seed_selection(G, k, p=0.1, iterations_count=200):
     seeds = []
     total_iters = 0
     n = G.number_of_nodes()
-    
+
     # Create a copy of the graph for evaluations
     G_copy = G.copy()
-    
+
     # Marginal gain of each node
     for _ in range(k):
         best_node = None
         best_influence = -1
-        
+
         # Evaluate each node not already in the seed set
         for node in range(n):
             if node in seeds:
                 continue
-                
+
             # Evaluate influence with this node added to the seed set
             candidate_seeds = seeds + [node]
             influence, iters = ndlib_estimated_influence(G_copy, candidate_seeds, p, iterations_count)
             total_iters += iters
-            
+
             # Update best node if influence is improved
             if influence > best_influence:
                 best_influence = influence
                 best_node = node
-        
+
         # Add the best node to the seed set
         if best_node is not None:
             seeds.append(best_node)
-    
+
     return seeds, total_iters
