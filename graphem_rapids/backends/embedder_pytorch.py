@@ -466,7 +466,7 @@ class GraphEmbedderPyTorch:
             self.logger.info("Using PyKeOps for k-NN (low dimension, GPU available)")
             backend = 'pykeops'
         else:
-            self.logger.info("Using PyTorch for k-NN")
+            self.logger.info("Using PyTorch for k-NN (n_query=%d, n_dims=%d)", n_query, n_dims)
             backend = 'torch'
 
         # Adaptive chunking based on backend and memory
