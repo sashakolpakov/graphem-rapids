@@ -34,7 +34,7 @@ Basic Usage::
     import graphem_rapids as gr
 
     # Generate graph
-    adjacency = gr.erdos_renyi_graph(n=1000, p=0.01)
+    adjacency = gr.generate_er(n=1000, p=0.01)
 
     # Create embedder (automatic backend selection)
     embedder = gr.create_graphem(adjacency, n_components=3)

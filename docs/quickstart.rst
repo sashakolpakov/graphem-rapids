@@ -31,7 +31,7 @@ Generate and Embed a Graph
     import graphem_rapids as gr
 
     # Generate graph (returns sparse adjacency matrix)
-    adjacency = gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
 
     # Create embedder with automatic backend selection
     embedder = gr.create_graphem(adjacency, n_components=3)

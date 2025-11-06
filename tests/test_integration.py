@@ -6,7 +6,7 @@ import torch
 from graphem_rapids import create_graphem
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_scale_free
 )
@@ -20,7 +20,7 @@ class TestEndToEndIntegration:
     def test_complete_pytorch_pipeline(self):
         """Test complete PyTorch pipeline from graph generation to embedding."""
         # Generate a medium-sized graph
-        adjacency =erdos_renyi_graph(n=100, p=0.05, seed=42)
+        adjacency =generate_er(n=100, p=0.05, seed=42)
 
         # Create embedder
         embedder = create_graphem(
@@ -73,7 +73,7 @@ class TestEndToEndIntegration:
         test_cases = [
             ("Random Regular", generate_random_regular, {"n": 50, "d": 4, "seed": 42}),
             ("Scale-Free", generate_scale_free, {"n": 60, "seed": 42}),
-            ("Erdős-Rényi", erdos_renyi_graph, {"n": 40, "p": 0.1, "seed": 42}),
+            ("Erdős-Rényi", generate_er, {"n": 40, "p": 0.1, "seed": 42}),
         ]
 
         for graph_name, generator, params in test_cases:
@@ -112,7 +112,7 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_dimension_consistency(self):
         """Test that embeddings work consistently across dimensions."""
-        adjacency =erdos_renyi_graph(n=50, p=0.08, seed=42)
+        adjacency =generate_er(n=50, p=0.08, seed=42)
 
         dimensions = [2, 3, 4, 5]
         embeddings = {}
@@ -252,7 +252,7 @@ class TestEndToEndIntegration:
     @pytest.mark.slow
     def test_memory_efficiency(self):
         """Test that memory-efficient mode works for larger graphs."""
-        adjacency =erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency =generate_er(n=200, p=0.02, seed=42)
 
         embedder = create_graphem(
             adjacency=adjacency,

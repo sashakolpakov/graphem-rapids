@@ -9,7 +9,7 @@ Basic Embedding
     import graphem_rapids as gr
 
     # Generate and embed
-    adjacency = gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
     embedder = gr.create_graphem(adjacency, n_components=3)
     embedder.run_layout(num_iterations=50)
 
@@ -50,7 +50,7 @@ Influence Maximization
     import networkx as nx
 
     # Generate graph
-    adjacency = gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
 
     # Compute embedding
     embedder = gr.create_graphem(adjacency, n_components=3)
@@ -61,12 +61,12 @@ Influence Maximization
 
     # Evaluate influence spread
     G = nx.from_scipy_sparse_array(adjacency)
-    influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations=100)
+    influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=100)
     print(f"Influence: {influence:.1f} nodes ({influence/len(G)*100:.1f}%)")
 
     # Compare with greedy (slow, optimal)
     greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
-    greedy_influence, _ = gr.ndlib_estimated_influence(G, greedy_seeds, p=0.1, iterations=100)
+    greedy_influence, _ = gr.ndlib_estimated_influence(G, greedy_seeds, p=0.1, iterations_count=100)
     print(f"Greedy influence: {greedy_influence:.1f} nodes ({greedy_influence/len(G)*100:.1f}%)")
 
 Large-Scale Graph with cuVS
@@ -77,7 +77,7 @@ Large-Scale Graph with cuVS
     import graphem_rapids as gr
 
     # Generate large graph
-    adjacency = gr.erdos_renyi_graph(n=200000, p=0.00005, seed=42)
+    adjacency = gr.generate_er(n=200000, p=0.00005, seed=42)
 
     # Force cuVS backend for large-scale
     embedder = gr.GraphEmbedderCuVS(
@@ -107,7 +107,7 @@ Memory Management
 
     # Automatic cleanup
     with MemoryManager(cleanup_on_exit=True):
-        adjacency = gr.erdos_renyi_graph(n=50000, p=0.0001)
+        adjacency = gr.generate_er(n=50000, p=0.0001)
         embedder = gr.create_graphem(adjacency, n_components=3)
         embedder.run_layout(num_iterations=40)
         positions = embedder.get_positions()

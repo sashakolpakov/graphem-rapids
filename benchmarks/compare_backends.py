@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_scale_free,
     generate_ba,
@@ -295,14 +295,14 @@ def main():
     # Define test graphs
     if args.small_test:
         graph_configs = [
-            (erdos_renyi_graph, {'n': 100, 'p': 0.05, 'seed': 42}, 'Erdős-Rényi (n=100)'),
+            (generate_er, {'n': 100, 'p': 0.05, 'seed': 42}, 'Erdős-Rényi (n=100)'),
             (generate_random_regular, {'n': 100, 'd': 4, 'seed': 42}, 'Random Regular (n=100)'),
             (generate_ba, {'n': 100, 'm': 2, 'seed': 42}, 'Barabási-Albert (n=100)')
         ]
     else:
         graph_configs = [
-            (erdos_renyi_graph, {'n': 200, 'p': 0.02, 'seed': 42}, 'Erdős-Rényi (n=200)'),
-            (erdos_renyi_graph, {'n': 500, 'p': 0.01, 'seed': 42}, 'Erdős-Rényi (n=500)'),
+            (generate_er, {'n': 200, 'p': 0.02, 'seed': 42}, 'Erdős-Rényi (n=200)'),
+            (generate_er, {'n': 500, 'p': 0.01, 'seed': 42}, 'Erdős-Rényi (n=500)'),
             (generate_random_regular, {'n': 200, 'd': 4, 'seed': 42}, 'Random Regular (n=200)'),
             (generate_random_regular, {'n': 500, 'd': 4, 'seed': 42}, 'Random Regular (n=500)'),
             (generate_scale_free, {'n': 200, 'seed': 42}, 'Scale-Free (n=200)'),

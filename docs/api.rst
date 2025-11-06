@@ -33,7 +33,7 @@ Graph Generators
 Random Graphs
 ~~~~~~~~~~~~~
 
-.. autofunction:: graphem_rapids.erdos_renyi_graph
+.. autofunction:: graphem_rapids.generate_er
 
 .. autofunction:: graphem_rapids.generate_random_regular
 

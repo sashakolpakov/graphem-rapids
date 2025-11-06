@@ -16,7 +16,7 @@ from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
 from graphem_rapids.benchmark import run_benchmark
 from graphem_rapids.visualization import report_full_correlation_matrix
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_ws,
     generate_ba
@@ -339,7 +339,7 @@ def compare_with_benchmark():
     graph_configs = [
         (generate_random_regular, {'n': 100, 'd': 3, 'seed': 42}, 'Random Regular (d=3)'),
         (generate_random_regular, {'n': 100, 'd': 5, 'seed': 42}, 'Random Regular (d=5)'),
-        (erdos_renyi_graph, {'n': 100, 'p': 0.03, 'seed': 42}, 'Erdős–Rényi'),
+        (generate_er, {'n': 100, 'p': 0.03, 'seed': 42}, 'Erdős–Rényi'),
         (generate_ws, {'n': 100, 'k': 4, 'p': 0.1, 'seed': 42}, 'Watts-Strogatz'),
         (generate_ba, {'n': 100, 'm': 2, 'seed': 42}, 'Barabási-Albert')
     ]

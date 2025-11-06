@@ -10,7 +10,7 @@ import networkx as nx
 
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_scale_free,
     generate_geometric,
@@ -141,7 +141,7 @@ def main():
     
     # Test Erdős–Rényi Graph
     test_graph_generator(
-        erdos_renyi_graph,
+        generate_er,
         {'n': 100, 'p': 0.05, 'seed': 42},
         'Erdős–Rényi'
     )

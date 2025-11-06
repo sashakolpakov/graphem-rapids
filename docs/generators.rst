@@ -11,7 +11,7 @@ Erdős-Rényi
 
 ::
 
-    adjacency = gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
 
 Random edges with probability *p*.
 

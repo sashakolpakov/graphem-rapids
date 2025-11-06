@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 import torch
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
-from graphem_rapids.generators import erdos_renyi_graph, generate_random_regular
+from graphem_rapids.generators import generate_er, generate_random_regular
 
 # Test if PyKeOps is available for conditional tests
 try:
@@ -129,7 +129,7 @@ class TestPyTorchBackend:
     @pytest.mark.fast
     def test_pytorch_memory_management(self):
         """Test memory management features of PyTorch backend."""
-        adjacency = erdos_renyi_graph(n=100, p=0.05, seed=42)
+        adjacency = generate_er(n=100, p=0.05, seed=42)
 
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,
@@ -235,7 +235,7 @@ class TestPyTorchBackend:
     @pytest.mark.fast
     def test_pytorch_large_graphs(self):
         """Test PyTorch backend with large graphs."""
-        adjacency = erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency = generate_er(n=200, p=0.02, seed=42)
 
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,
@@ -290,7 +290,7 @@ class TestPyTorchBackend:
     @pytest.mark.fast
     def test_pytorch_batch_processing(self):
         """Test PyTorch backend with different batch sizes."""
-        adjacency = erdos_renyi_graph(n=100, p=0.03, seed=42)
+        adjacency = generate_er(n=100, p=0.03, seed=42)
 
         # Test with small batch size
         embedder_small = GraphEmbedderPyTorch(
@@ -588,7 +588,7 @@ class TestPyTorchBackend:
     @pytest.mark.fast
     def test_memory_efficiency_with_backends(self):
         """Test memory efficiency features with different backends."""
-        adjacency = erdos_renyi_graph(n=150, p=0.03, seed=42)
+        adjacency = generate_er(n=150, p=0.03, seed=42)
 
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,

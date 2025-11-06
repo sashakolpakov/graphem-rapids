@@ -15,7 +15,7 @@ from .backends.embedder_pytorch import GraphEmbedderPyTorch
 from .utils.backend_selection import get_optimal_backend, BackendConfig
 from .benchmark import run_benchmark, benchmark_correlations, run_influence_benchmark
 from .generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_sbm,
     generate_ba,
     generate_ws,
@@ -108,7 +108,7 @@ def create_graphem(
     --------
     >>> import graphem_rapids as gr
     >>> # Generate sparse adjacency matrix
-    >>> adjacency = gr.erdos_renyi_graph(n=500, p=0.01)
+    >>> adjacency = gr.generate_er(n=500, p=0.01)
     >>> embedder = gr.create_graphem(adjacency, n_components=3)
     >>> embedder.run_layout(num_iterations=50)
     >>> embedder.display_layout()
@@ -180,7 +180,7 @@ __all__ = [
     'GraphEmbedderPyTorch',
 
     # Graph generators
-    'erdos_renyi_graph',
+    'generate_er',
     'generate_sbm',
     'generate_ba',
     'generate_ws',

@@ -12,7 +12,7 @@ try:
 except ImportError:
     CUVS_AVAILABLE = False
 
-from graphem_rapids.generators import erdos_renyi_graph, generate_random_regular
+from graphem_rapids.generators import generate_er, generate_random_regular
 
 
 @pytest.mark.skipif(not CUVS_AVAILABLE, reason="cuVS not available")
@@ -82,7 +82,7 @@ class TestCuVSBackend:
 
     def test_cuvs_memory_efficiency(self):
         """Test cuVS backend memory efficiency with larger graphs."""
-        adjacency = erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency = generate_er(n=200, p=0.02, seed=42)
 
         embedder = GraphEmbedderCuVS(
             adjacency=adjacency,
@@ -156,7 +156,7 @@ class TestCuVSBackend:
 
     def test_cuvs_large_graphs(self):
         """Test cuVS backend with large graphs."""
-        adjacency = erdos_renyi_graph(n=500, p=0.008, seed=42)
+        adjacency = generate_er(n=500, p=0.008, seed=42)
 
         embedder = GraphEmbedderCuVS(
             adjacency=adjacency,
@@ -208,7 +208,7 @@ class TestCuVSBackend:
 
     def test_cuvs_knn_performance(self):
         """Test cuVS backend KNN performance optimization."""
-        adjacency = erdos_renyi_graph(n=100, p=0.05, seed=42)
+        adjacency = generate_er(n=100, p=0.05, seed=42)
 
         # Test with different n_neighbors values
         for n_neighbors_val in [5, 10, 20]:
@@ -228,7 +228,7 @@ class TestCuVSBackend:
 
     def test_cuvs_batch_processing(self):
         """Test cuVS backend with different batch sizes."""
-        adjacency = erdos_renyi_graph(n=100, p=0.03, seed=42)
+        adjacency = generate_er(n=100, p=0.03, seed=42)
 
         # Test with different batch sizes (note: batch_size removed from API, test sample_size instead)
         for sample_size_val in [64, 256, 512]:
@@ -248,7 +248,7 @@ class TestCuVSBackend:
 
     def test_cuvs_sample_size_effects(self):
         """Test cuVS backend with different sample sizes."""
-        adjacency = erdos_renyi_graph(n=100, p=0.04, seed=42)
+        adjacency = generate_er(n=100, p=0.04, seed=42)
 
         # Test with different sample sizes
         for sample_size in [128, 256, 512]:
@@ -293,7 +293,7 @@ class TestCuVSBackend:
 
     def test_cuvs_gpu_memory_management(self):
         """Test cuVS backend GPU memory management."""
-        adjacency = erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency = generate_er(n=200, p=0.02, seed=42)
 
         embedder = GraphEmbedderCuVS(
             adjacency=adjacency,

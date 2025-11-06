@@ -38,7 +38,7 @@ def main():
     # Generate a small test graph
     print("\n2. Generating test graph...")
     n_vertices = 100
-    adjacency = gr.erdos_renyi_graph(n=n_vertices, p=0.05)
+    adjacency = gr.generate_er(n=n_vertices, p=0.05)
     print(f"   Generated graph: {n_vertices} vertices, {adjacency.nnz//2} edges")
 
     # Test automatic backend selection
@@ -93,7 +93,7 @@ def main():
         for size in test_sizes:
             print(f"\n   Testing {size} vertices...")
             try:
-                adjacency = gr.erdos_renyi_graph(n=size, p=0.02)
+                adjacency = gr.generate_er(n=size, p=0.02)
                 start_time = time.time()
 
                 embedder = gr.create_graphem(

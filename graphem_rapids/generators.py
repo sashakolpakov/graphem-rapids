@@ -30,7 +30,7 @@ def _edges_to_sparse_adjacency(edges, n):
     return adj
 
 
-def erdos_renyi_graph(n, p, seed=0):
+def generate_er(n, p, seed=0):
     """
     Generate a random undirected graph using the Erdős–Rényi G(n, p) model.
 

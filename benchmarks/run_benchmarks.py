@@ -31,7 +31,7 @@ except ImportError:
 # Import GraphEm Rapids modules
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_scale_free,
     generate_geometric,
@@ -121,7 +121,7 @@ class BenchmarkRunner:
         
         # Define graph configurations to test
         graph_configs = [
-            (erdos_renyi_graph, {'n': 500, 'p': 0.03, 'seed': 42}, 'Erdős–Rényi'),
+            (generate_er, {'n': 500, 'p': 0.03, 'seed': 42}, 'Erdős–Rényi'),
             (generate_random_regular, {'n': 500, 'd': 3, 'seed': 42}, 'Random Regular (d=3)'),
             (generate_random_regular, {'n': 500, 'd': 5, 'seed': 42}, 'Random Regular (d=5)'),
             (generate_ws, {'n': 500, 'k': 4, 'p': 0.1, 'seed': 42}, 'Watts-Strogatz Small-World'),
@@ -375,7 +375,7 @@ class BenchmarkRunner:
         
         # Define graph configurations to test
         graph_configs = [
-            (erdos_renyi_graph, {'n': 200, 'p': 0.05, 'seed': 42}, 'Erdős–Rényi'),
+            (generate_er, {'n': 200, 'p': 0.05, 'seed': 42}, 'Erdős–Rényi'),
             (generate_random_regular, {'n': 200, 'd': 4, 'seed': 42}, 'Random Regular'),
             (generate_ws, {'n': 200, 'k': 4, 'p': 0.1, 'seed': 42}, 'Watts-Strogatz'),
             (generate_ba, {'n': 200, 'm': 3, 'seed': 42}, 'Barabási-Albert'),

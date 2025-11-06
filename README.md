@@ -47,7 +47,7 @@ pip install graphem-rapids[all]         # Everything
 import graphem_rapids as gr
 
 # Generate graph (returns sparse adjacency matrix)
-adjacency = gr.erdos_renyi_graph(n=1000, p=0.01)
+adjacency = gr.generate_er(n=1000, p=0.01)
 
 # Create embedder (automatic backend selection)
 embedder = gr.create_graphem(adjacency, n_components=3)
@@ -118,7 +118,7 @@ All generators return scipy sparse adjacency matrices:
 
 ```python
 # Random
-gr.erdos_renyi_graph(n=1000, p=0.01, seed=42)
+gr.generate_er(n=1000, p=0.01, seed=42)
 gr.generate_random_regular(n=100, d=3, seed=42)
 
 # Scale-free & small-world
@@ -147,7 +147,7 @@ gr.generate_balanced_tree(r=2, h=10)
 ## Influence Maximization
 
 ```python
-adjacency = gr.erdos_renyi_graph(n=1000, p=0.01)
+adjacency = gr.generate_er(n=1000, p=0.01)
 embedder = gr.create_graphem(adjacency, n_components=3)
 embedder.run_layout(num_iterations=50)
 
@@ -172,6 +172,7 @@ from graphem_rapids.utils.memory_management import MemoryManager, get_gpu_memory
 mem_info = get_gpu_memory_info()
 print(f"GPU: {mem_info['free']:.1f}GB free / {mem_info['total']:.1f}GB total")
 
+adjacency = gr.generate_er(n=1000, p=0.01)
 with MemoryManager(cleanup_on_exit=True):
     embedder = gr.create_graphem(adjacency)
     embedder.run_layout(50)
@@ -180,6 +181,8 @@ with MemoryManager(cleanup_on_exit=True):
 ### Batch Size Tuning
 ```python
 from graphem_rapids.utils.memory_management import get_optimal_chunk_size
+
+adjacency = gr.generate_er(n=1000, p=0.01)
 
 # Automatic (recommended)
 embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=None)

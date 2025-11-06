@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 from graphem_rapids import create_graphem
-from graphem_rapids.generators import erdos_renyi_graph, generate_random_regular
+from graphem_rapids.generators import generate_er, generate_random_regular
 
 
 class TestEmbedder:
@@ -122,7 +122,7 @@ class TestEmbedder:
     @pytest.mark.slow
     def test_large_graphs(self):
         """Test embedder with large graphs."""
-        adjacency = erdos_renyi_graph(n=200, p=0.02, seed=42)
+        adjacency = generate_er(n=200, p=0.02, seed=42)
         
         embedder = create_graphem(
             adjacency=adjacency,

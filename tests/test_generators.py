@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 import scipy.sparse as sp
 from graphem_rapids.generators import (
-    erdos_renyi_graph,
+    generate_er,
     generate_random_regular,
     generate_scale_free,
     generate_geometric,
@@ -23,10 +23,10 @@ class TestGenerators:
     """Test graph generators."""
 
     @pytest.mark.fast
-    def test_erdos_renyi_graph(self):
+    def test_generate_er(self):
         """Test Erdős-Rényi graph generator."""
         n, p = 50, 0.1
-        adjacency = erdos_renyi_graph(n=n, p=p, seed=42)
+        adjacency = generate_er(n=n, p=p, seed=42)
 
         assert sp.issparse(adjacency)
         assert adjacency.shape == (n, n)
@@ -153,8 +153,8 @@ class TestGenerators:
     @pytest.mark.fast
     def test_reproducible_results(self):
         """Test that generators produce reproducible results with same seed."""
-        adj1 = erdos_renyi_graph(n=20, p=0.2, seed=123)
-        adj2 = erdos_renyi_graph(n=20, p=0.2, seed=123)
+        adj1 = generate_er(n=20, p=0.2, seed=123)
+        adj2 = generate_er(n=20, p=0.2, seed=123)
 
         # Should be identical
         assert (adj1 != adj2).nnz == 0
@@ -162,8 +162,8 @@ class TestGenerators:
     @pytest.mark.fast
     def test_different_seeds(self):
         """Test that different seeds produce different graphs."""
-        adj1 = erdos_renyi_graph(n=30, p=0.2, seed=1)
-        adj2 = erdos_renyi_graph(n=30, p=0.2, seed=2)
+        adj1 = generate_er(n=30, p=0.2, seed=1)
+        adj2 = generate_er(n=30, p=0.2, seed=2)
 
         # Should be different (with high probability)
         assert (adj1 != adj2).nnz > 0
@@ -303,7 +303,7 @@ class TestGenerators:
     def test_adjacency_format(self):
         """Test that all generators return sparse adjacency matrices."""
         generators_and_params = [
-            (erdos_renyi_graph, {'n': 10, 'p': 0.3}),
+            (generate_er, {'n': 10, 'p': 0.3}),
             (generate_random_regular, {'n': 10, 'd': 3}),
             (generate_scale_free, {'n': 20}),
             (generate_geometric, {'n': 15, 'radius': 0.4}),
