@@ -67,7 +67,11 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
     for e in G.edges():
         config.add_edge_configuration("threshold", e, p)
 
-    # Set initial seeds to infected state
+    # Set all nodes to susceptible (status 0) initially
+    for node in G.nodes():
+        config.add_node_configuration("status", node, 0)
+
+    # Set initial seeds to infected state (status 1)
     for seed in seeds:
         config.add_node_configuration("status", seed, 1)
 
