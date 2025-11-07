@@ -67,22 +67,19 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
     for e in G.edges():
         config.add_edge_configuration("threshold", e, p)
 
-    # Set initial infected nodes using model initial configuration
-    config.add_model_initial_configuration("Infected", seeds)
-
-    # Initialize the model with configuration
+    # Initialize the model with configuration FIRST
     model.set_initial_status(config)
+
+    # THEN set initial seeds to infected state
+    for seed in seeds:
+        config.add_node_configuration("status", seed, 1)
 
     # Run the simulation
     iterations = model.iteration_bunch(iterations_count)
 
-    # Use NDlib's build_trends to get node counts by status over time
-    trends = model.build_trends(iterations)
-
-    # Total influenced = maximum number of nodes that reached "Removed" state (2)
-    # This captures all nodes that were infected at any point
-    node_counts = trends[0]['trends']['node_count']
-    influenced_count = max(node_counts.get(2, [0]))  # State 2 = Removed (influenced)
+    # Get the number of nodes in state 2 (influenced) at the end
+    final_status = iterations[-1]['status']
+    influenced_count = sum(1 for node_state in final_status.values() if node_state == 2)
 
     return influenced_count, len(iterations)
 
