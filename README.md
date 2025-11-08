@@ -204,6 +204,10 @@ python benchmarks/run_benchmarks.py             # Performance tests
 python benchmarks/compare_backends.py --sizes 1000,10000,100000
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contribution guidelines.
+
 ## Citation
 
 [![arXiv](https://img.shields.io/badge/arXiv-2506.07435-b31b1b.svg)](https://arxiv.org/abs/2506.07435)
