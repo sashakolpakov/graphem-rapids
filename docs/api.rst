@@ -18,6 +18,7 @@ PyTorch Backend
    :members:
    :undoc-members:
    :show-inheritance:
+   :noindex:
 
 RAPIDS cuVS Backend
 ~~~~~~~~~~~~~~~~~~~
@@ -95,6 +96,22 @@ Benchmarking
 .. autofunction:: graphem_rapids.run_benchmark
 
 .. autofunction:: graphem_rapids.run_influence_benchmark
+
+Visualization
+-------------
+
+.. autofunction:: graphem_rapids.report_corr
+
+.. autofunction:: graphem_rapids.report_full_correlation_matrix
+
+.. autofunction:: graphem_rapids.plot_radial_vs_centrality
+
+.. autofunction:: graphem_rapids.display_benchmark_results
+
+Datasets
+--------
+
+.. autofunction:: graphem_rapids.load_dataset
 
 Utilities
 ---------

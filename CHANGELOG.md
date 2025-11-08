@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Sphinx documentation**: Fixed duplicate object description warning for `GraphEmbedderPyTorch.positions`
+- **NDlib integration**: Fixed critical bug in `ndlib_estimated_influence()` causing infinite hangs
+  - Changed from `add_node_configuration()` to `add_model_initial_configuration("Infected", seeds)` for proper seed initialization
+  - Fixed influence calculation to read from `node_count` dict instead of empty `status` delta dict
+  - Eliminates "Initial infection missing" warnings
+  - Seeds now correctly propagate influence through the network
 - **Benchmark functions**: Fixed TypeError in `benchmark_correlations()` and `run_influence_benchmark()`
   - Replaced `len(edges)` with `adjacency.shape[0]` and `adjacency.nnz`
   - Use `nx.from_scipy_sparse_array()` instead of manual graph construction
