@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-11-08
+
 ### Fixed
 - **Sphinx documentation**: Fixed duplicate object description warning for `GraphEmbedderPyTorch.positions`
 - **NDlib integration**: Fixed critical bug in `ndlib_estimated_influence()` causing infinite hangs
@@ -25,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `generate_complete_bipartite_graph(n_top, n_bottom)` - Complete bipartite K_{n,m}
   - `generate_delaunay_triangulation(n, seed)` - Planar graphs from Delaunay triangulation
 - **Tests**: Comprehensive test coverage for all new generators
+- **Documentation**: Added CONTRIBUTING.md with contribution guidelines
+- **Examples**: Added Jupyter notebook with comprehensive examples and benchmarks
 
 ## [0.2.0] - 2025-10-30
 
@@ -72,5 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite with 98+ tests
 - Documentation and examples
 
+[0.2.1]: https://github.com/sashakolpakov/graphem-rapids/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/sashakolpakov/graphem-rapids/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sashakolpakov/graphem-rapids/releases/tag/v0.1.0

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graphem-rapids"
-version = "0.1.0"
+version = "0.2.1"
 description = "A graph embedding library with PyTorch and RAPIDS acceleration"
 readme = "README.md"
 license = {text = "MIT"}
