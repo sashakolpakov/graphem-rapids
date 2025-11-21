@@ -41,7 +41,7 @@ pip install graphem-rapids[rapids]      # + RAPIDS cuVS
 pip install graphem-rapids[all]         # Everything
 ```
 
-## Quick Start
+## Quick Start [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sashakolpakov/graphem-rapids/blob/main/examples/graphem_rapids_notebook.ipynb)
 
 ```python
 import graphem_rapids as gr
