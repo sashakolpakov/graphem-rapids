@@ -14,11 +14,14 @@
   <a href="https://pytorch.org/">
     <img src="https://img.shields.io/badge/PyTorch-2.0+-red.svg" alt="PyTorch 2.0+"/>
   </a>
-  <a href="https://rapids.ai/">
-    <img src="https://img.shields.io/badge/RAPIDS-cuVS-76B900.svg" alt="RAPIDS cuVS"/>
-  </a>
+  </p>
+
+  <p align="center">
   <a href="https://pepy.tech/projects/graphem-rapids">
     <img alt="Pepy Total Downloads" src="https://img.shields.io/pepy/dt/graphem-rapids">
+  </a>
+  <a href="https://sashakolpakov.github.io/graphem-rapids/">
+    <img src="https://img.shields.io/website-up-down-green-red/https/sashakolpakov.github.io/graphem-rapids?label=API%20Documentation" alt="Docs Status"/>
   </a>
 </p>
 
