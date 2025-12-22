@@ -22,10 +22,10 @@ from graphem_rapids.generators import (
 )
 
 
-def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
+def test_graph_generator(generator, params, name, n_components=3, num_iterations=30):
     """
     Test a graph generator function and visualize the resulting embedding.
-    
+
     Parameters:
         generator: function
             Graph generator function
@@ -33,8 +33,8 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
             Parameters for the graph generator
         name: str
             Name of the graph type for display
-        dim: int
-            Dimension of the embedding
+        n_components: int
+            Number of embedding components (dimensions)
         num_iterations: int
             Number of layout iterations
     """
@@ -81,7 +81,7 @@ def test_graph_generator(generator, params, name, dim=3, num_iterations=30):
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
         adjacency=adjacency,
-        n_components=dim,
+        n_components=n_components,
         L_min=10.0,
         k_attr=0.5,
         k_inter=0.1,

@@ -141,9 +141,9 @@ class BenchmarkRunner:
             
             # Run benchmark
             result = run_benchmark(
-                generator, 
+                generator,
                 params,
-                dim=3,
+                n_components=3,
                 num_iterations=30
             )
             

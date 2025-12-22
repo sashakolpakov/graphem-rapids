@@ -23,17 +23,17 @@ from graphem_rapids.generators import (
 )
 
 
-def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iterations=30):
+def test_random_regular_varying_degree(n=100, degrees=None, n_components=3, num_iterations=30):
     """
     Test random regular graphs with varying degrees.
-    
+
     Parameters:
         n: int
             Number of vertices
         degrees: list
             The list of degrees to test
-        dim: int
-            Dimension of the embedding
+        n_components: int
+            Number of embedding components (dimensions)
         num_iterations: int
             Number of layout iterations
     """
@@ -101,7 +101,7 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,
-            n_components=dim,
+            n_components=n_components,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
@@ -186,17 +186,17 @@ def test_random_regular_varying_degree(n=100, degrees=None, dim=3, num_iteration
     return df
 
 
-def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations=30):
+def test_random_regular_varying_size(degree=3, sizes=None, n_components=3, num_iterations=30):
     """
     Test random regular graphs with varying sizes.
-    
+
     Parameters:
         degree: int
             Degree of each vertex
         sizes: list
             The list of graph sizes to test
-        dim: int
-            Dimension of the embedding
+        n_components: int
+            Number of embedding components (dimensions)
         num_iterations: int
             Number of layout iterations
     """
@@ -263,7 +263,7 @@ def test_random_regular_varying_size(degree=3, sizes=None, dim=3, num_iterations
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,
-            n_components=dim,
+            n_components=n_components,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,
@@ -355,7 +355,7 @@ def compare_with_benchmark():
         result = run_benchmark(
             generator,
             params,
-            dim=3,
+            n_components=3,
             L_min=10.0,
             k_attr=0.5,
             k_inter=0.1,

@@ -15,7 +15,7 @@ from .influence import graphem_seed_selection, ndlib_estimated_influence, greedy
 logger = logging.getLogger(__name__)
 
 
-def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, k_inter=0.1,
+def run_benchmark(graph_generator, graph_params, n_components=3, L_min=10.0, k_attr=0.5, k_inter=0.1,
                  n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
     """
     Run a benchmark on the given graph using GraphEm Rapids.
@@ -26,7 +26,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
         Function to generate a graph (returns sparse adjacency matrix)
     graph_params : dict
         Parameters for the graph generator
-    dim : int, default=3
+    n_components : int, default=3
         Number of embedding components (dimensions)
     L_min : float, default=10.0
         Minimum spring length parameter
@@ -111,7 +111,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
 
     embedder = GraphEmbedderPyTorch(
         adjacency=adjacency,
-        n_components=dim,
+        n_components=n_components,
         L_min=L_min,
         k_attr=k_attr,
         k_inter=k_inter,
@@ -139,7 +139,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
         'avg_degree': 2 * m / n if n > 0 else 0.0,
         'layout_time': layout_time,
         'graph_type': graph_generator.__name__,
-        'n_components': dim,
+        'n_components': n_components,
         'backend': backend,
         'radii': radii,
         'positions': positions,
@@ -158,7 +158,7 @@ def run_benchmark(graph_generator, graph_params, dim=3, L_min=10.0, k_attr=0.5, 
     return result
 
 
-def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_attr=0.5, k_inter=0.1,
+def benchmark_correlations(graph_generator, graph_params, n_components=2, L_min=10.0, k_attr=0.5, k_inter=0.1,
                           n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
     """
     Run a benchmark to calculate correlations between embedding radii and centrality measures.
@@ -169,7 +169,7 @@ def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_a
         Function to generate a graph (returns sparse adjacency matrix)
     graph_params : dict
         Parameters for the graph generator
-    dim : int, default=2
+    n_components : int, default=2
         Number of embedding components (dimensions)
     L_min, k_attr, k_inter : float
         Force-directed layout parameters
@@ -193,7 +193,7 @@ def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_a
     results = run_benchmark(
         graph_generator,
         graph_params,
-        dim=dim,
+        n_components=n_components,
         L_min=L_min,
         k_attr=k_attr,
         k_inter=k_inter,
@@ -239,7 +239,7 @@ def benchmark_correlations(graph_generator, graph_params, dim=2, L_min=10.0, k_a
 
 
 def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iterations=200,
-                           dim=3, num_layout_iterations=20, layout_params=None, backend='pytorch'):
+                           n_components=3, num_layout_iterations=20, layout_params=None, backend='pytorch'):
     """
     Run a benchmark comparing influence maximization methods.
 
@@ -255,7 +255,7 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
         Propagation probability for influence diffusion
     iterations : int, default=200
         Number of Monte Carlo iterations for influence estimation
-    dim : int, default=3
+    n_components : int, default=3
         Number of embedding components (dimensions)
     num_layout_iterations : int, default=20
         Number of force-directed layout iterations
@@ -304,7 +304,7 @@ def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iteratio
 
     embedder = GraphEmbedderPyTorch(
         adjacency=adjacency,
-        n_components=dim,
+        n_components=n_components,
         verbose=True,
         **layout_params
     )

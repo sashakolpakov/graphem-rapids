@@ -124,7 +124,7 @@ Benchmarking Correlations
     results = gr.benchmark_correlations(
         gr.generate_ba,
         {"n": 1000, "m": 3, "seed": 42},
-        dim=2,
+        n_components=2,
         L_min=40,
         num_iterations=50
     )

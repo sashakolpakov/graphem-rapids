@@ -96,7 +96,7 @@ def run_backend_comparison(graph_configs, backends, num_iterations=30, output_di
                 result = run_benchmark(
                     generator,
                     params,
-                    dim=3,
+                    n_components=3,
                     L_min=10.0,
                     k_attr=0.5,
                     k_inter=0.1,

@@ -75,7 +75,7 @@ def print_available_datasets():
     print("\nTo use a dataset, call load_dataset('dataset-name') or load_dataset_as_networkx('dataset-name')")
 
 
-def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
+def analyze_dataset(dataset_name, sample_size=None, n_components=3, num_iterations=30):
     """
     Download, load, and analyze a dataset.
 
@@ -84,8 +84,8 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
             Name of the dataset to analyze
         sample_size: int, optional
             If set, sample the graph to this number of nodes for visualization
-        dim: int
-            Dimension of the embedding
+        n_components: int
+            Number of embedding components (dimensions)
         num_iterations: int
             Number of layout iterations
     """
@@ -170,13 +170,13 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     print(f"- Average clustering coefficient: {avg_clustering:.4f}")
     
     # Create and run embedder
-    print(f"Creating embedding in dimension {dim}...")
+    print(f"Creating embedding in {n_components} dimensions...")
     # Convert to adjacency matrix
     adjacency = nx.to_scipy_sparse_array(G_cc, format='csr')
     # Create and run embedder
     embedder = GraphEmbedderPyTorch(
         adjacency=adjacency,
-        n_components=dim,
+        n_components=n_components,
         L_min=4.0,
         k_attr=0.5,
         k_inter=0.1,
@@ -259,17 +259,17 @@ def analyze_dataset(dataset_name, sample_size=None, dim=3, num_iterations=30):
     return embedder, G_cc
 
 
-def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
+def compare_datasets(dataset_names, sample_size=1000, n_components=3, num_iterations=30):
     """
     Compare multiple datasets by analyzing their properties.
-    
+
     Parameters:
         dataset_names: list
             The list of dataset names to compare
         sample_size: int
             Sample size for each dataset
-        dim: int
-            Dimension of the embedding
+        n_components: int
+            Number of embedding components (dimensions)
         num_iterations: int
             Number of layout iterations
     """
@@ -366,7 +366,7 @@ def compare_datasets(dataset_names, sample_size=1000, dim=3, num_iterations=30):
         # Create and run embedder
         embedder = GraphEmbedderPyTorch(
             adjacency=adjacency,
-            n_components=dim,
+            n_components=n_components,
             L_min=4.0,
             k_attr=0.5,
             k_inter=0.1,
@@ -430,18 +430,18 @@ def main():
     print_available_datasets()
     
     # Analyze a small social network dataset
-    analyze_dataset('snap-facebook_combined', sample_size=None, dim=3, num_iterations=50)
+    analyze_dataset('snap-facebook_combined', sample_size=None, n_components=3, num_iterations=50)
 
     # Analyze a medium-sized dataset with sampling
-    analyze_dataset('snap-ca-GrQc', sample_size=3500, dim=3, num_iterations=30)
-    
+    analyze_dataset('snap-ca-GrQc', sample_size=3500, n_components=3, num_iterations=30)
+
     # Compare multiple datasets
     compare_datasets([
         'snap-facebook_combined',
         'snap-ca-GrQc',
         'snap-ca-HepTh',
         'snap-wiki-vote'
-    ], sample_size=1500, dim=3, num_iterations=20)
+    ], sample_size=1500, n_components=3, num_iterations=20)
 
 
 if __name__ == "__main__":
