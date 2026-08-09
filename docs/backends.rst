@@ -31,6 +31,11 @@ The ``create_graphem()`` function automatically selects the optimal backend base
     # Automatic selection (recommended)
     embedder = gr.create_graphem(adjacency, n_components=3)
 
+If automatic selection chooses cuVS for a non-2D layout, ``create_graphem``
+supplies ``k_inter=0`` unless the caller explicitly set ``k_inter``. Direct
+``GraphEmbedderCuVS`` construction remains strict because crossing forces are
+defined only in 2D.
+
 PyTorch Backend
 ---------------
 
@@ -70,6 +75,7 @@ Best for large-scale graphs (100K+ vertices).
 
 * Optimized KNN with cuVS indices
 * CuPy operations for GPU acceleration
+* Bounded midpoint references rather than a mandatory all-edge index
 * Multiple index types (brute force, IVF-Flat, IVF-PQ)
 * Automatic index selection
 
@@ -79,23 +85,34 @@ Best for large-scale graphs (100K+ vertices).
 
     embedder = gr.GraphEmbedderCuVS(
         adjacency,
-        n_components=3,
+        n_components=2,
         index_type='auto',       # 'auto', 'brute_force', 'ivf_flat', 'ivf_pq'
         L_min=1.0,
         k_attr=0.2,
         k_inter=0.5,
         n_neighbors=10,
-        sample_size=1024,        # Larger samples for cuVS
+        sample_size=None,        # Scale query samples with the graph
+        midpoint_reference_size=None,  # Bounded automatic reference sample
+        max_candidate_pairs=8_388_608, # Fail-fast query-neighbor memory bound
+        ivf_n_probes=8,          # Explicit IVF recall/runtime control
         batch_size=None,
         verbose=True
     )
 
+Crossing forces are supported only for 2D layouts. For more components, set
+``k_inter=0`` explicitly.
+
 **Index Types:**
 
-* ``brute_force``: Exact KNN, best for <100K vertices
-* ``ivf_flat``: Good balance for 100K-1M vertices
-* ``ivf_pq``: Memory-efficient for >1M vertices
-* ``auto``: Automatic selection (recommended)
+* ``brute_force``: Exact KNN, selected below 100K midpoint references
+* ``ivf_flat``: Automatic large-reference choice
+* ``ivf_pq``: Explicit opt-in; generally unsuitable for GraphEm's low dimensions
+* ``auto``: Brute force or IVF-Flat based on reference size (recommended)
+
+In the 2D crossing-force path, IVF-PQ is intentionally substituted with IVF-Flat
+because product quantization has no useful low-dimensional compression regime.
+Use ``ivf_n_probes`` and record the resulting diagnostics when evaluating ANN
+recall/runtime tradeoffs.
 
 Configuration
 -------------

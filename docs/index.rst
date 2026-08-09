@@ -15,7 +15,7 @@ Features
 
 * **Unified API**: SciPy sparse adjacency matrices or GPU-resident edge lists
 * **Multiple Backends**: PyTorch and a CuPy/cuVS large-graph path
-* **GPU Acceleration**: sparse initialization, bounded edge batching, and on-device top-k
+* **GPU Acceleration**: sparse initialization, fused edge kernels, bounded midpoint indexing, and on-device top-k
 * **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
 * **Influence Maximization**: embedding and degree-discount selection with repeated IC evaluation
 
@@ -57,6 +57,15 @@ Contents
    backends
    generators
    examples
+
+Reproducibility suite
+---------------------
+
+The pinned H100 capacity, stress, ANN-recall, and external influence-baseline
+workflow is maintained separately in
+`fast-geometric-repro <https://github.com/sashakolpakov/fast-geometric-repro>`_.
+Keeping that evidence harness outside the package prevents benchmark-only
+dependencies and archived artifacts from becoming part of the library.
 
 Citation
 --------

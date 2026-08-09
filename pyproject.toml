@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -35,6 +35,8 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -130,6 +132,6 @@ Paper = "https://arxiv.org/abs/2506.07435"
 graphem-rapids-info = "graphem_rapids.utils.backend_selection:main"
 
 [tool.setuptools]
-packages = {find = {exclude = ["tests*", "docs*", "examples*", "benchmarks*", "data*", "build*"]}}
+packages = {find = {include = ["graphem_rapids*"]}}
 include-package-data = true
 zip-safe = false

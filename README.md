@@ -25,13 +25,18 @@
   </a>
 </p>
 
-High-performance [GraphEm](https://github.com/sashakolpakov/graphem) implementation using PyTorch and RAPIDS cuVS. Force-directed layout with geometric intersection detection produces embeddings that correlate strongly with centrality measures.
+High-performance [GraphEm](https://github.com/sashakolpakov/graphem)
+implementation using PyTorch and RAPIDS cuVS. Force-directed layouts with
+geometric intersection detection produce radial node-ranking scores for
+influence experiments; the H100 evidence workflow compares those scores against
+cheaper centrality and influence-maximization baselines.
 
 ## Features
 
 - **Unified API**: SciPy sparse adjacency matrices or GPU-resident canonical edge lists
 - **Multiple Backends**: PyTorch for small/medium graphs and a CuPy/cuVS large-graph path
-- **GPU-Native Scaling**: sparse randomized spectral initialization, bounded edge batching, and on-device top-k selection
+- **GPU-Native Scaling**: sparse randomized initialization, fused edge kernels,
+  bounded midpoint indexing, and on-device top-k selection
 - **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
 - **Influence Maximization**: embedding and degree-discount selection with reproducible batched IC evaluation
 
@@ -43,6 +48,15 @@ pip install graphem-rapids[cuda]        # + CUDA support
 pip install graphem-rapids[rapids]      # + RAPIDS cuVS
 pip install graphem-rapids[all]         # Everything
 ```
+
+The version-pinned H100 capacity, stress, ANN-recall, and influence evidence
+workflow lives in the separate
+[`fast-geometric-repro`](https://github.com/sashakolpakov/fast-geometric-repro)
+repository. This repository remains the installable library and its unit tests.
+
+> **Migration note for 0.3:** `graphem_seed_selection(embedder, k)` no longer
+> performs 20 hidden layout iterations. Run the layout first, as in the example
+> below, or pass `num_iterations=20` explicitly to retain the earlier behavior.
 
 ## Quick Start [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sashakolpakov/graphem-rapids/blob/main/examples/graphem_rapids_notebook.ipynb)
 
@@ -70,6 +84,10 @@ embedder.display_layout()             # 2D or 3D plot
 embedder = gr.create_graphem(adjacency, n_components=3)
 ```
 
+Crossing forces are 2D-only. When automatic selection chooses cuVS for a
+higher-dimensional layout, `create_graphem` supplies `k_inter=0` if the caller
+did not set it. An explicit nonzero `k_inter` remains an error outside 2D.
+
 ### Explicit PyTorch
 ```python
 embedder = gr.GraphEmbedderPyTorch(
@@ -82,14 +100,19 @@ embedder = gr.GraphEmbedderPyTorch(
 ### Explicit RAPIDS cuVS
 ```python
 embedder = gr.GraphEmbedderCuVS(
-    adjacency, n_components=3,
+    adjacency, n_components=2,
     index_type='auto',
     sample_size=None,              # scale samples with graph size
+    midpoint_reference_size=None,  # bounded stochastic reference set
     force_mode='legacy',           # or paper-consistent 'attractive'
     intersection_interval=5,       # refresh midpoint ANN every five steps
-    edge_chunk_size=2_000_000,
+    max_candidate_pairs=8_388_608, # fail-fast candidate-memory bound
 )
 ```
+
+Crossing forces are geometric segment operations and are therefore defined only
+in 2D. For a higher-dimensional spring-only layout, pass (for example)
+`n_components=4, k_inter=0` explicitly.
 
 The index is rebuilt over current **edge midpoints**, and returned row ids are edge
 ids. Automatic selection uses brute force below 100K midpoints and IVF-Flat above
@@ -201,6 +224,12 @@ The NDlib and exhaustive greedy functions remain compatibility helpers. Their
 `iterations_count` is a diffusion time-step limit, not a Monte Carlo trial count,
 and the old greedy routine is not a scalable or exact baseline.
 
+The CUDA evaluator uses a packed visited bitset and compact activation queue.
+When an external allocator such as RMM owns reusable memory, callers can pass an
+allocator-aware ``available_memory_bytes`` value; generated immutable CSR inputs
+may opt into ``assume_validated_csr=True`` to avoid rescanning every edge for each
+seed method.
+
 ## Advanced
 
 ### Memory Management
@@ -241,11 +270,12 @@ pytest tests/test_pytorch_backend.py            # Specific backend
 python benchmarks/run_benchmarks.py             # Performance tests
 python benchmarks/compare_backends.py --sizes 1000,10000,100000
 python benchmarks/diagnose_force_modes.py        # Paper vs legacy spring sign
-python benchmarks/benchmark_h100.py --help       # End-to-end million-scale test
 ```
 
-See [the H100 runbook](docs/h100-benchmark.md) and [reviewer/engineering
-triage](docs/reviewer-triage.md) before interpreting benchmark results.
+Use
+[`fast-geometric-repro`](https://github.com/sashakolpakov/fast-geometric-repro)
+for the fail-closed H100 runbook, reviewer/engineering triage, external IMM
+adapter, environment lock, and evidence schemas.
 
 ## Contributing
 

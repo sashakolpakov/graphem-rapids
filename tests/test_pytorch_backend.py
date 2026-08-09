@@ -41,6 +41,46 @@ class TestPyTorchBackend:
         assert embedder.device.type in ['cpu', 'cuda']
 
     @pytest.mark.fast
+    def test_seed_selection_excludes_isolated_vertices(self, monkeypatch):
+        """Rank only vertices represented by the layout's undirected edges."""
+        monkeypatch.setattr(
+            GraphEmbedderPyTorch,
+            "_check_pykeops_availability",
+            lambda _self: False,
+        )
+        adjacency = np.zeros((6, 6), dtype=np.float32)
+        for source, target in ((0, 1), (1, 2), (2, 3)):
+            adjacency[source, target] = 1.0
+            adjacency[target, source] = 1.0
+        embedder = GraphEmbedderPyTorch(
+            adjacency,
+            n_components=2,
+            device="cpu",
+            k_inter=0,
+            verbose=False,
+            seed=7,
+        )
+        embedder.positions = np.asarray(
+            [
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [3.0, 0.0],
+                [4.0, 0.0],
+                [100.0, 0.0],
+                [200.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+
+        assert embedder.n_active_vertices == 4
+        assert set(embedder.topk_nodes(4)) == {0, 1, 2, 3}
+        assert set(embedder.diverse_topk_nodes(2)).issubset({0, 1, 2, 3})
+        with pytest.raises(ValueError, match="non-isolated"):
+            embedder.topk_nodes(5)
+        with pytest.raises(ValueError, match="non-isolated"):
+            embedder.diverse_topk_nodes(5)
+
+    @pytest.mark.fast
     def test_pytorch_cpu_device(self):
         """Test PyTorch backend with CPU device."""
         adjacency = generate_random_regular(n=30, d=4, seed=42)
@@ -632,4 +672,3 @@ class TestPyTorchBackend:
         assert embedder_300d.positions.shape == (40, 300)
         assert np.all(np.isfinite(embedder_2d.positions))
         assert np.all(np.isfinite(embedder_300d.positions))
-

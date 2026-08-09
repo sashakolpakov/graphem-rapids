@@ -17,17 +17,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retaining the v0.2.x sign as `force_mode="legacy"` pending quality benchmarks.
 - Make NDlib optional so importing graph generation and embedding does not require
   an influence-simulation package.
+- Exclude isolated vertices from radial seed selection in both built-in
+  backends, scale randomized initialization to the preferred edge length, and
+  use isotropic normalization.
+- Define crossing forces only in 2D and replace radial four-endpoint repulsion
+  with a segment-separation force that can resolve a symmetric crossing.
+- Canonicalize and validate CPU/GPU CSR inputs before cascade evaluation; unsafe
+  CSC/BSR interpretation, explicit zeros, duplicates, and malformed indices no
+  longer reach the CUDA kernel.
 
 ### Added
 
 - GPU-resident canonical edge-list input and randomized sparse spectral
   initialization for graphs that cannot pass through SciPy or a CPU eigensolver.
-- Bounded edge-force batching, less-contended bincount reductions, configurable
-  crossing intervals, on-device radial top-k, and stage diagnostics.
+- Fused FP32 spring and crossing accumulation, bounded midpoint references and
+  candidate arrays, configurable crossing intervals, on-device active-only
+  radial top-k, and stage diagnostics.
 - Reproducible CPU/CuPy Independent Cascade evaluation with independent Monte
-  Carlo trials, plus degree-discount and geometric-diversity seed selection.
-- End-to-end H100 and spring-sign diagnostic benchmarks, including degree,
-  PageRank, degree-discount, cascade quality, and peak device memory.
+  Carlo trials, a packed visited bitset and compact activation queue, plus
+  degree-discount and geometric-diversity seed selection.
+- Stable diagnostics, explicit ANN controls, allocator-aware cascade planning,
+  and GPU-resident input contracts consumed by the separately versioned
+  ``fast-geometric-repro`` H100 evidence suite.
+
+### Changed
+
+- Keep higher-dimensional ``create_graphem`` calls backend-independent by
+  supplying ``k_inter=0`` when the factory selects cuVS and the caller omitted
+  the 2D-only crossing-force option.
+- Reject boolean, fractional, and string seed/count inputs instead of silently
+  coercing them to node ids or returning the wrong number of seeds.
+- Independent Cascade live-edge worlds are now keyed by
+  ``(trial, source, target)`` rather than CSR storage offset. Results remain
+  deterministic for a seed but intentionally differ from earlier releases and
+  are invariant to canonical CSR storage order.
+- ``graphem_seed_selection`` no longer runs 20 hidden layout iterations by
+  default. Pass ``num_iterations`` explicitly when selection should also mutate
+  the layout; pass ``num_iterations=20`` to retain the v0.2 behavior.
 
 ## [0.2.1] - 2025-11-08
 

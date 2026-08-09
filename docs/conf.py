@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'GraphEm Rapids'
 copyright = '2025, Alexander Kolpakov and Igor Rivin'
 author = 'Alexander Kolpakov and Igor Rivin'
-release = '0.2.0'
+release = '0.3.0.dev0'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -25,7 +25,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
-html_static_path = ['_static']
+html_static_path = []
 
 # -- Extension configuration -------------------------------------------------
 autodoc_member_order = 'bysource'

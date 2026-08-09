@@ -82,9 +82,9 @@ Large-Scale Graph with cuVS
     # Force cuVS backend for large-scale
     embedder = gr.GraphEmbedderCuVS(
         adjacency,
-        n_components=3,
+        n_components=2,
         index_type='ivf_flat',
-        sample_size=2048,
+        sample_size=None,
         batch_size=4096,
         verbose=True
     )

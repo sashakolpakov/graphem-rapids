@@ -32,6 +32,8 @@ def test_diverse_selection_avoids_a_near_duplicate():
     embedder.n = 3
     embedder.device = torch.device("cpu")
     embedder._positions = torch.tensor([[10.0, 0.0], [9.0, 0.0], [-8.0, 0.0]])
+    embedder._active_mask = torch.ones(3, dtype=torch.bool)
+    embedder.n_active_vertices = 3
 
     assert embedder.topk_nodes(2) == [0, 1]
     assert embedder.diverse_topk_nodes(2, diversity=0.8, candidate_pool_size=3) == [0, 2]

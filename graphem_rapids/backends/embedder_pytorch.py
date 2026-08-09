@@ -6,6 +6,7 @@ as the computational backend, with optional CUDA acceleration.
 """
 
 import logging
+import numbers
 
 import numpy as np
 import torch
@@ -161,6 +162,12 @@ class GraphEmbedderPyTorch:
 
         # Convert edges to tensor
         self.edges = torch.tensor(edges, device=self.device, dtype=torch.long)
+        self._active_mask = torch.zeros(
+            self.n, device=self.device, dtype=torch.bool
+        )
+        if self.edges.numel():
+            self._active_mask[self.edges.reshape(-1)] = True
+        self.n_active_vertices = int(self._active_mask.count_nonzero().item())
 
         # Memory management - detect backend capability
         self._has_pykeops = self._check_pykeops_availability()
@@ -872,32 +879,63 @@ class GraphEmbedderPyTorch:
 
     def get_scores(self, as_numpy=True):
         """Return radial node scores."""
+        # pylint: disable-next=not-callable
         scores = torch.linalg.norm(self._positions, dim=1)
         return scores.detach().cpu().numpy() if as_numpy else scores
 
     def topk_nodes(self, k):
         """Return top radial node ids without copying all positions."""
-        if not 0 <= k <= self.n:
-            raise ValueError("k must be between zero and the number of vertices")
+        if (
+            isinstance(k, (bool, np.bool_))
+            or not isinstance(k, numbers.Integral)
+        ):
+            raise ValueError("k must be an integer")
+        k = int(k)
+        if not 0 <= k <= self.n_active_vertices:
+            raise ValueError(
+                "k must be between zero and the number of non-isolated vertices"
+            )
         if k == 0:
             return []
-        return torch.topk(self.get_scores(as_numpy=False), k=k).indices.cpu().tolist()
+        scores = self.get_scores(as_numpy=False).masked_fill(
+            ~self._active_mask, -torch.inf
+        )
+        return torch.topk(scores, k=k).indices.cpu().tolist()
 
     def diverse_topk_nodes(self, k, diversity=0.2, candidate_pool_size=None):
         """Select high radial scores with embedding-space diversification."""
-        if not 0 <= k <= self.n:
-            raise ValueError("k must be between zero and the number of vertices")
+        if (
+            isinstance(k, (bool, np.bool_))
+            or not isinstance(k, numbers.Integral)
+        ):
+            raise ValueError("k must be an integer")
+        k = int(k)
+        if not 0 <= k <= self.n_active_vertices:
+            raise ValueError(
+                "k must be between zero and the number of non-isolated vertices"
+            )
         if not 0.0 <= diversity <= 1.0:
             raise ValueError("diversity must be between zero and one")
         if k == 0:
             return []
         if candidate_pool_size is None:
-            candidate_pool_size = min(self.n, max(10_000, 200 * k))
-        candidate_pool_size = min(self.n, int(candidate_pool_size))
+            candidate_pool_size = min(
+                self.n_active_vertices, max(10_000, 200 * k)
+            )
+        if (
+            isinstance(candidate_pool_size, (bool, np.bool_))
+            or not isinstance(candidate_pool_size, numbers.Integral)
+        ):
+            raise ValueError("candidate_pool_size must be an integer or None")
+        candidate_pool_size = min(
+            self.n_active_vertices, int(candidate_pool_size)
+        )
         if candidate_pool_size < k:
             raise ValueError("candidate_pool_size must be at least k")
 
-        scores = self.get_scores(as_numpy=False)
+        scores = self.get_scores(as_numpy=False).masked_fill(
+            ~self._active_mask, -torch.inf
+        )
         candidate_scores, candidates = torch.topk(scores, k=candidate_pool_size)
         relevance = (candidate_scores - candidate_scores.min()) / (
             candidate_scores.max() - candidate_scores.min() + 1e-12

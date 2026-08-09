@@ -3,6 +3,7 @@
 import pytest
 import numpy as np
 import torch
+import graphem_rapids as gr
 from graphem_rapids import create_graphem
 from graphem_rapids.backends.embedder_pytorch import GraphEmbedderPyTorch
 from graphem_rapids.generators import (
@@ -10,6 +11,30 @@ from graphem_rapids.generators import (
     generate_random_regular,
     generate_scale_free
 )
+
+
+def test_cuvs_factory_disables_2d_only_force_for_implicit_high_dimensional_call(
+    monkeypatch,
+):
+    """Keep documented automatic high-dimensional factory calls usable."""
+    calls = []
+
+    class FakeCuVSEmbedder:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(gr, "get_optimal_backend", lambda _config: "cuvs")
+    monkeypatch.setattr(gr, "_CUVS_AVAILABLE", True)
+    monkeypatch.setattr(gr, "GraphEmbedderCuVS", FakeCuVSEmbedder)
+    adjacency = np.eye(4, dtype=np.float32)
+
+    gr.create_graphem(adjacency, n_components=3)
+    gr.create_graphem(adjacency, n_components=3, k_inter=0.25)
+    gr.create_graphem(adjacency, n_components=2)
+
+    assert calls[0]["k_inter"] == 0.0
+    assert calls[1]["k_inter"] == 0.25
+    assert "k_inter" not in calls[2]
 
 
 class TestEndToEndIntegration:

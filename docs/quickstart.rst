@@ -55,6 +55,10 @@ Automatic (Recommended)
 
     embedder = gr.create_graphem(adjacency, n_components=3)
 
+When this automatic call selects cuVS for a non-2D layout, the factory supplies
+``k_inter=0`` unless ``k_inter`` was explicitly provided. Crossing forces remain
+2D-only.
+
 PyTorch Backend
 ~~~~~~~~~~~~~~~
 
@@ -72,15 +76,18 @@ RAPIDS cuVS Backend
 Best for 100K+ vertices::
 
     embedder = gr.GraphEmbedderCuVS(
-        adjacency, n_components=3,
+        adjacency, n_components=2,
         index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
-        sample_size=1024, batch_size=None
+        sample_size=None, batch_size=None
     )
 
+Crossing forces are 2D-only. Use ``k_inter=0`` explicitly for a
+higher-dimensional spring-only layout.
+
 **Index Types:**
-  * ``brute_force``: <100K vertices (exact KNN)
-  * ``ivf_flat``: 100K-1M vertices (good balance)
-  * ``ivf_pq``: >1M vertices (memory-efficient)
+  * ``brute_force``: exact search below 100K midpoint references
+  * ``ivf_flat``: automatic choice for larger midpoint references
+  * ``ivf_pq``: explicit opt-in, usually a poor fit for low-dimensional layouts
 
 Configuration
 -------------

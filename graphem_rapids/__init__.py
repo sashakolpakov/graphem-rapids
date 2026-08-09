@@ -99,6 +99,9 @@ def create_graphem(
         If None, automatically selects optimal backend.
     **kwargs
         Additional arguments passed to the embedder constructor.
+        When the cuVS backend is selected for a layout with more or fewer than
+        two components, the factory supplies ``k_inter=0`` unless the caller
+        explicitly provided ``k_inter``. Geometric crossing forces are 2D-only.
 
     Returns
     -------
@@ -135,6 +138,8 @@ def create_graphem(
 
     # Create embedder with selected backend
     if optimal_backend == 'cuvs' and _CUVS_AVAILABLE and GraphEmbedderCuVS is not None:
+        if n_components != 2 and 'k_inter' not in kwargs:
+            kwargs['k_inter'] = 0.0
         return GraphEmbedderCuVS(
             adjacency=adjacency,
             edges=edges,
