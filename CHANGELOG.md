@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Build cuVS indexes over edge midpoints and consume integer edge-neighbor ids;
+  v0.2.x indexed vertices and interpreted distances as edge indices.
+- Use the RAPIDS 26.06 parameter-object API with an explicit, diagnosed tiled
+  fallback instead of silently entering a quadratic broadcast path.
+- Make the paper-consistent attractive spring sign available explicitly while
+  retaining the v0.2.x sign as `force_mode="legacy"` pending quality benchmarks.
+- Make NDlib optional so importing graph generation and embedding does not require
+  an influence-simulation package.
+
+### Added
+
+- GPU-resident canonical edge-list input and randomized sparse spectral
+  initialization for graphs that cannot pass through SciPy or a CPU eigensolver.
+- Bounded edge-force batching, less-contended bincount reductions, configurable
+  crossing intervals, on-device radial top-k, and stage diagnostics.
+- Reproducible CPU/CuPy Independent Cascade evaluation with independent Monte
+  Carlo trials, plus degree-discount and geometric-diversity seed selection.
+- End-to-end H100 and spring-sign diagnostic benchmarks, including degree,
+  PageRank, degree-discount, cascade quality, and peak device memory.
+
 ## [0.2.1] - 2025-11-08
 
 ### Fixed

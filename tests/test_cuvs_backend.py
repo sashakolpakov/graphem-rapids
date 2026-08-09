@@ -4,8 +4,7 @@ import pytest
 import numpy as np
 
 try:
-    import cudf  # pylint: disable=unused-import
-    import cuml  # pylint: disable=unused-import
+    import cupy as cp
     import cuvs  # pylint: disable=unused-import
     from graphem_rapids.backends.embedder_cuvs import GraphEmbedderCuVS
     CUVS_AVAILABLE = True
@@ -18,6 +17,55 @@ from graphem_rapids.generators import generate_er, generate_random_regular
 @pytest.mark.skipif(not CUVS_AVAILABLE, reason="cuVS not available")
 class TestCuVSBackend:
     """Test cuVS backend functionality."""
+
+    def test_search_result_uses_integer_neighbor_output(self):
+        distances = cp.asarray([[0.0, 1.0]], dtype=cp.float32)
+        neighbors = cp.asarray([[3, 7]], dtype=cp.int64)
+        parsed = GraphEmbedderCuVS._neighbors_from_search_result((distances, neighbors))
+        assert cp.array_equal(parsed, neighbors)
+
+    def test_midpoint_knn_returns_edge_ids(self):
+        edges = cp.asarray([[0, 1], [2, 3], [4, 5]], dtype=cp.int32)
+        embedder = GraphEmbedderCuVS(
+            edges=edges,
+            n_vertices=6,
+            assume_canonical_edges=True,
+            n_components=2,
+            initialization="randomized",
+            spectral_iterations=2,
+            index_type="brute_force",
+            n_neighbors=1,
+            sample_size=3,
+            verbose=False,
+            seed=4,
+        )
+        embedder.positions = cp.asarray(
+            [[-0.1, 0], [0.1, 0], [0.9, 0], [1.1, 0], [9.9, 0], [10.1, 0]],
+            dtype=cp.float32,
+        )
+        midpoints = 0.5 * (
+            embedder.positions[embedder.edges[:, 0]]
+            + embedder.positions[embedder.edges[:, 1]]
+        )
+        neighbors, sampled = embedder._locate_knn_midpoints_cuvs(midpoints, 1)
+        assert cp.array_equal(sampled, cp.arange(3))
+        assert cp.all(neighbors >= 0)
+        assert cp.all(neighbors < embedder.n_edges)
+        assert cp.array_equal(neighbors[:, 0], cp.asarray([1, 0, 1]))
+
+    def test_gpu_edge_list_constructor_avoids_host_adjacency(self):
+        edges = cp.asarray([[0, 1], [1, 2], [2, 3]], dtype=cp.int32)
+        embedder = GraphEmbedderCuVS(
+            edges=edges,
+            n_vertices=4,
+            assume_canonical_edges=True,
+            initialization="randomized",
+            spectral_iterations=2,
+            verbose=False,
+        )
+        assert embedder.adjacency is None
+        assert embedder.n_edges == 3
+        assert embedder.positions.shape == (4, 2)
 
     def test_cuvs_backend_initialization(self):
         """Test cuVS backend initialization."""
@@ -72,13 +120,14 @@ class TestCuVSBackend:
             verbose=False
         )
 
-        initial_positions = embedder.positions.copy()
+        initial_positions = embedder.get_positions().copy()
         embedder.run_layout(num_iterations=3)
+        final_positions = embedder.get_positions()
 
         # Check that positions changed
-        assert not np.array_equal(initial_positions, embedder.positions)
-        assert embedder.positions.shape == (40, 2)
-        assert np.all(np.isfinite(embedder.positions))
+        assert not np.array_equal(initial_positions, final_positions)
+        assert final_positions.shape == (40, 2)
+        assert np.all(np.isfinite(final_positions))
 
     def test_cuvs_memory_efficiency(self):
         """Test cuVS backend memory efficiency with larger graphs."""
@@ -97,7 +146,7 @@ class TestCuVSBackend:
 
         # Test that the embedder was created successfully
         assert embedder.positions.shape == (200, 2)
-        assert np.all(np.isfinite(embedder.positions))
+        assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_disconnected_graph(self):
         """Test cuVS backend with disconnected graph."""
@@ -129,7 +178,7 @@ class TestCuVSBackend:
 
         embedder.run_layout(num_iterations=2)
         assert embedder.positions.shape == (12, 2)
-        assert np.all(np.isfinite(embedder.positions))
+        assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_layout_stability(self):
         """Test that cuVS backend layout runs are numerically stable."""
@@ -149,9 +198,10 @@ class TestCuVSBackend:
         for _ in range(3):
             embedder.run_layout(num_iterations=2)
 
-            assert np.all(np.isfinite(embedder.positions))
+            positions = embedder.get_positions()
+            assert np.all(np.isfinite(positions))
 
-            max_coord = np.max(np.abs(embedder.positions))
+            max_coord = np.max(np.abs(positions))
             assert max_coord < 1000  # Reasonable bound
 
     def test_cuvs_large_graphs(self):
@@ -170,11 +220,11 @@ class TestCuVSBackend:
         )
 
         assert embedder.positions.shape == (500, 2)
-        assert np.all(np.isfinite(embedder.positions))
+        assert np.all(np.isfinite(embedder.get_positions()))
 
         # Run a few iterations to ensure it works
         embedder.run_layout(num_iterations=2)
-        assert np.all(np.isfinite(embedder.positions))
+        assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_parameter_validation(self):
         """Test cuVS backend parameter validation."""
@@ -224,7 +274,7 @@ class TestCuVSBackend:
             )
 
             embedder.run_layout(num_iterations=2)
-            assert np.all(np.isfinite(embedder.positions))
+            assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_batch_processing(self):
         """Test cuVS backend with different batch sizes."""
@@ -244,7 +294,7 @@ class TestCuVSBackend:
             )
 
             embedder.run_layout(num_iterations=2)
-            assert np.all(np.isfinite(embedder.positions))
+            assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_sample_size_effects(self):
         """Test cuVS backend with different sample sizes."""
@@ -264,7 +314,7 @@ class TestCuVSBackend:
             )
 
             embedder.run_layout(num_iterations=2)
-            assert np.all(np.isfinite(embedder.positions))
+            assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_force_parameters(self):
         """Test cuVS backend with different force parameters."""
@@ -289,7 +339,7 @@ class TestCuVSBackend:
             )
 
             embedder.run_layout(num_iterations=2)
-            assert np.all(np.isfinite(embedder.positions))
+            assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_gpu_memory_management(self):
         """Test cuVS backend GPU memory management."""
@@ -309,7 +359,7 @@ class TestCuVSBackend:
         # Test that multiple layout runs work without memory issues
         for _ in range(3):
             embedder.run_layout(num_iterations=2)
-            assert np.all(np.isfinite(embedder.positions))
+            assert np.all(np.isfinite(embedder.get_positions()))
 
     def test_cuvs_data_transfer_integrity(self):
         """Test data integrity in cuVS backend CPU-GPU transfers."""
@@ -327,13 +377,14 @@ class TestCuVSBackend:
         )
 
         # Test that positions are properly transferred back from GPU
-        initial_positions = embedder.positions.copy()
+        initial_positions = embedder.get_positions().copy()
         embedder.run_layout(num_iterations=1)
+        final_positions = embedder.get_positions()
 
         # Verify data types and shapes are preserved
-        assert isinstance(embedder.positions, np.ndarray)
-        assert embedder.positions.shape == initial_positions.shape
-        assert embedder.positions.dtype in [np.float32, np.float64]
+        assert isinstance(final_positions, np.ndarray)
+        assert final_positions.shape == initial_positions.shape
+        assert final_positions.dtype in [np.float32, np.float64]
 
     def test_cuvs_numerical_precision(self):
         """Test cuVS backend numerical precision."""
@@ -354,11 +405,10 @@ class TestCuVSBackend:
         embedder.run_layout(num_iterations=5)
 
         # Check that positions are not NaN or infinity
-        assert not np.any(np.isnan(embedder.positions))
-        assert not np.any(np.isinf(embedder.positions))
+        positions = embedder.get_positions()
+        assert not np.any(np.isnan(positions))
+        assert not np.any(np.isinf(positions))
 
         # Check that positions are within reasonable bounds
-        max_coord = np.max(np.abs(embedder.positions))
+        max_coord = np.max(np.abs(positions))
         assert max_coord < 1e6  # Should not explode numerically
-
-

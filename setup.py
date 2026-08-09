@@ -19,7 +19,6 @@ required = [
     "pandas>=1.3.0",
     "plotly>=5.5.0",
     "scipy>=1.7.0",
-    "ndlib>=5.1.0",
     "loguru>=0.6.0",
     "requests>=2.25.0",
     "line_profiler>=4.0.0",
@@ -38,12 +37,14 @@ cuda_required = [
 
 # RAPIDS acceleration (optional)
 rapids_required = [
-    "cudf-cu12",
-    "cuml-cu12",
     "cuvs-cu12",
     "cupy-cuda12x>=10.0.0",
-    "pykeops>=2.1.0"
 ]
+
+rapids_full_required = rapids_required + [
+    "cudf-cu12", "cugraph-cu12", "cuml-cu12", "pykeops>=2.1.0"
+]
+influence_required = ["ndlib>=5.1.0"]
 
 # Documentation requirements
 docs_required = [
@@ -70,7 +71,7 @@ dev_required = test_required + docs_required + [
 
 setup(
     name="graphem-rapids",
-    version="0.2.1",
+    version="0.3.0.dev0",
     description="A high-performance graph embedding library with PyTorch and RAPIDS acceleration",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -89,10 +90,12 @@ setup(
     extras_require={
         "cuda": cuda_required,
         "rapids": rapids_required,
+        "rapids-full": rapids_full_required,
+        "influence": influence_required,
         "docs": docs_required,
         "test": test_required,
         "dev": dev_required,
-        "all": rapids_required + docs_required + test_required,
+        "all": rapids_full_required + influence_required + docs_required + test_required,
     },
     python_requires=">=3.8",
     keywords=[

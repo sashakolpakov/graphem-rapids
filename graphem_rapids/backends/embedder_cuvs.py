@@ -6,6 +6,8 @@ large-scale nearest neighbor computations and GPU-accelerated processing.
 """
 
 import logging
+import math
+import time
 import warnings
 
 import numpy as np
@@ -18,7 +20,6 @@ from tqdm import tqdm
 # RAPIDS imports
 try:
     import cupy as cp
-    import cuvs
     from cuvs.neighbors import brute_force, ivf_flat, ivf_pq
     CUVS_AVAILABLE = True
 except ImportError:
@@ -27,13 +28,6 @@ except ImportError:
         "RAPIDS cuVS not available. This backend requires RAPIDS cuVS installation.",
         ImportWarning
     )
-
-from ..utils.memory_management import (
-    MemoryManager,
-    get_optimal_chunk_size,
-    cleanup_gpu_memory,
-    monitor_memory_usage
-)
 
 logger = logging.getLogger(__name__)
 
@@ -62,19 +56,31 @@ class GraphEmbedderCuVS:
 
     def __init__(
         self,
-        adjacency,
+        adjacency=None,
         n_components=2,
         L_min=1.0,
         k_attr=0.2,
         k_inter=0.5,
         n_neighbors=10,
-        sample_size=1024,
+        sample_size=None,
         batch_size=None,
         index_type='auto',
         dtype=np.float32,
         verbose=True,
         logger_instance=None,
-        seed=None
+        seed=None,
+        initialization='auto',
+        spectral_max_vertices=50_000,
+        spectral_iterations=24,
+        force_mode='legacy',
+        learning_rate=0.1,
+        max_displacement=1.0,
+        intersection_interval=None,
+        edge_chunk_size=None,
+        profile=False,
+        edges=None,
+        n_vertices=None,
+        assume_canonical_edges=False,
     ):
         """
         Initialize the cuVS GraphEmbedder.
@@ -94,8 +100,8 @@ class GraphEmbedderCuVS:
             Intersection repulsion force constant.
         n_neighbors : int, default=10
             Number of nearest neighbors for intersection detection.
-        sample_size : int, default=1024
-            Sample size for kNN computation (larger for cuVS).
+        sample_size : int, optional
+            Sampled midpoint queries. ``None`` scales the sample with edge count.
         batch_size : int, optional
             Batch size for processing. If None, automatically selects based on available memory.
             Can be manually set (e.g., batch_size=1024) for custom memory management.
@@ -129,17 +135,66 @@ class GraphEmbedderCuVS:
             if verbose:
                 logging.basicConfig(level=logging.INFO)
 
-        # Validate and store adjacency matrix
-        adjacency = self._validate_adjacency(adjacency)
-        self.adjacency = adjacency
+        if n_components <= 0:
+            raise ValueError("n_components must be positive")
+        if k_attr < 0 or k_inter < 0:
+            raise ValueError("force constants must be non-negative")
+        if L_min < 0:
+            raise ValueError("L_min must be non-negative")
+        if n_neighbors < 0:
+            raise ValueError("n_neighbors must be non-negative")
+        if force_mode not in ('legacy', 'attractive'):
+            raise ValueError("force_mode must be 'legacy' or 'attractive'")
+        if initialization not in ('auto', 'spectral', 'randomized'):
+            raise ValueError("initialization must be 'auto', 'spectral', or 'randomized'")
+        if index_type not in ('auto', 'brute_force', 'ivf_flat', 'ivf_pq'):
+            raise ValueError("unknown cuVS index_type")
+        if learning_rate <= 0:
+            raise ValueError("learning_rate must be positive")
+        if max_displacement is not None and max_displacement <= 0:
+            raise ValueError("max_displacement must be positive or None")
 
-        # Extract edges from adjacency matrix
-        edges = np.array(np.nonzero(adjacency)).T
-        # For undirected graphs, keep only upper triangular edges to avoid duplicates
-        edges = edges[edges[:, 0] < edges[:, 1]]
+        if (adjacency is None) == (edges is None):
+            raise ValueError("provide exactly one of adjacency or edges")
+        if edges is None:
+            adjacency = self._validate_adjacency(adjacency)
+            self.adjacency = adjacency
+            self.n = adjacency.shape[0]
+            upper = sp.triu(adjacency, k=1, format='coo')
+            host_edges = np.column_stack((upper.row, upper.col))
+            edge_dtype = cp.int32 if self.n < np.iinfo(np.int32).max else cp.int64
+            device_edges = cp.asarray(host_edges, dtype=edge_dtype)
+        else:
+            self.adjacency = None
+            if isinstance(edges, tuple) and len(edges) == 2:
+                device_edges = cp.column_stack((cp.asarray(edges[0]), cp.asarray(edges[1])))
+            else:
+                device_edges = cp.asarray(edges)
+            if device_edges.ndim != 2 or device_edges.shape[1] != 2:
+                raise ValueError("edges must have shape (n_edges, 2)")
+            if n_vertices is None:
+                if device_edges.shape[0] == 0:
+                    raise ValueError("n_vertices is required for an empty edge list")
+                n_vertices = int(cp.max(device_edges).item()) + 1
+            if n_vertices <= 0:
+                raise ValueError("n_vertices must be positive")
+            self.n = int(n_vertices)
+            edge_dtype = cp.int32 if self.n < np.iinfo(np.int32).max else cp.int64
+            device_edges = device_edges.astype(edge_dtype, copy=False)
+            if bool(cp.any(device_edges < 0)) or bool(cp.any(device_edges >= self.n)):
+                raise ValueError("edge endpoint is outside the graph")
+            device_edges = device_edges[device_edges[:, 0] != device_edges[:, 1]]
+            if not assume_canonical_edges and device_edges.shape[0]:
+                source = cp.minimum(device_edges[:, 0], device_edges[:, 1])
+                target = cp.maximum(device_edges[:, 0], device_edges[:, 1])
+                device_edges = cp.column_stack((source, target))
+                order = cp.lexsort((device_edges[:, 1], device_edges[:, 0]))
+                device_edges = device_edges[order]
+                unique = cp.ones(device_edges.shape[0], dtype=cp.bool_)
+                unique[1:] = cp.any(device_edges[1:] != device_edges[:-1], axis=1)
+                device_edges = device_edges[unique]
 
         # Store parameters
-        self.n = adjacency.shape[0]
         self.n_components = n_components
         self.dtype = dtype
         self.L_min = L_min
@@ -147,21 +202,44 @@ class GraphEmbedderCuVS:
         self.k_inter = k_inter
         self.n_neighbors = n_neighbors
         self.batch_size = batch_size  # None for automatic, or user-defined value
+        self.initialization = initialization
+        self.spectral_max_vertices = int(spectral_max_vertices)
+        self.spectral_iterations = int(spectral_iterations)
+        self.force_mode = force_mode
+        self.learning_rate = float(learning_rate)
+        self.max_displacement = max_displacement
+        self.profile = bool(profile)
+        self.timings = {
+            'initialization': 0.0,
+            'spring': 0.0,
+            'midpoint_knn': 0.0,
+            'intersections': 0.0,
+            'normalization': 0.0,
+        }
+        self._iteration = 0
+        self._knn_fallbacks = 0
+        self._knn_last_error = None
+        self._cached_knn_indices = None
+        self._cached_sampled_indices = None
 
         # Calculate number of edges for sample size validation
-        self.n_edges = len(edges)
-        self.sample_size = min(sample_size, self.n_edges) if self.n_edges > 0 else sample_size
+        self.edges = cp.ascontiguousarray(device_edges)
+        self.n_edges = int(self.edges.shape[0])
+        if sample_size is None:
+            # Enough samples to keep the crossing signal from disappearing on a
+            # large graph, with a hard bound on candidate-pair memory.
+            sample_size = min(131_072, max(4_096, int(8 * math.sqrt(max(self.n_edges, 1)))))
+        if sample_size < 0:
+            raise ValueError("sample_size must be non-negative or None")
+        self.sample_size = min(int(sample_size), self.n_edges)
 
         self.index_type = index_type
         self.verbose = verbose
 
-        # Convert edges to cupy array
-        self.edges = cp.asarray(edges, dtype=cp.int32)
-
         # Memory management for large datasets
         # Use user-defined batch_size if provided, otherwise calculate optimal one automatically
         if self.batch_size is None:
-            self.batch_size = get_optimal_chunk_size(self.n, self.n_components)
+            self.batch_size = min(max(self.sample_size, 1), 16_384)
             if self.verbose:
                 self.logger.info("Using automatic batch size: %d", self.batch_size)
         else:
@@ -173,12 +251,24 @@ class GraphEmbedderCuVS:
             self.logger.info("Graph: %d vertices, %d edges, %dD", self.n, len(self.edges), self.n_components)
             self.logger.info("Index type: %s", self.index_type)
 
+        if edge_chunk_size is None:
+            edge_chunk_size = min(max(self.n_edges, 1), 2_000_000)
+        if edge_chunk_size <= 0:
+            raise ValueError("edge_chunk_size must be positive")
+        self.edge_chunk_size = int(edge_chunk_size)
+        if intersection_interval is None:
+            intersection_interval = 5 if self.n_edges >= 1_000_000 else 1
+        if intersection_interval <= 0:
+            raise ValueError("intersection_interval must be positive")
+        self.intersection_interval = int(intersection_interval)
+
         # Compute initial embedding
         self.positions = self._compute_laplacian_embedding()
 
-        # Initialize cuVS index for KNN searches
+        # The index must be built over current edge midpoints, not vertices.
         self.knn_index = None
-        self._build_knn_index()
+        self._knn_kind = None
+        self._knn_search_params = None
 
     def _validate_adjacency(self, adjacency):
         """
@@ -207,110 +297,204 @@ class GraphEmbedderCuVS:
         # Check if square
         if adjacency.shape[0] != adjacency.shape[1]:
             raise ValueError(f"Adjacency matrix must be square, got shape {adjacency.shape}")
+        if adjacency.shape[0] == 0:
+            raise ValueError("adjacency matrix cannot be empty")
 
         # Convert to sparse format if needed
         if not sp.issparse(adjacency):
             adjacency = sp.csr_matrix(adjacency)
 
+        adjacency.sum_duplicates()
+        adjacency.eliminate_zeros()
         return adjacency
 
     def _compute_laplacian_embedding(self):
-        """
-        Compute the Laplacian embedding using scipy then transfer to GPU.
+        """Compute an exact small-graph or randomized GPU spectral layout."""
+        start = self._stage_start()
+        method = self.initialization
+        if method == 'auto':
+            method = (
+                'spectral'
+                if self.adjacency is not None and self.n <= self.spectral_max_vertices
+                else 'randomized'
+            )
+        if method == 'spectral' and self.adjacency is None:
+            raise ValueError("spectral initialization requires an adjacency matrix")
+        self.logger.info("Computing %s initialization", method)
 
-        Returns
-        -------
-        cupy.ndarray
-            Initial positions from Laplacian embedding.
-        """
-        self.logger.info("Computing Laplacian embedding")
+        if self.n == 1:
+            positions = cp.zeros((1, self.n_components), dtype=self.dtype)
+        elif method == 'spectral':
+            positions = self._compute_scipy_spectral_embedding()
+        else:
+            positions = self._compute_randomized_gpu_embedding()
 
-        # Use the adjacency matrix we already have
-        # Make symmetric in case it isn't (for undirected graphs)
-        A = self.adjacency + self.adjacency.transpose()
-        A.data = np.ones_like(A.data)  # Make unweighted for now
-
-        # Convert sparse array to matrix for scipy compatibility
-        if hasattr(A, 'toarray'):  # It's a sparse array/matrix
-            A = sp.csr_matrix(A)
-
-        # Compute normalized Laplacian
-        L = laplacian(A, normed=True)
-
-        # Compute eigenvectors
-        k = self.n_components + 1
-        try:
-            _, eigenvectors = spla.eigsh(L, k, which='SM')
-            lap_embedding = eigenvectors[:, 1:k]
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.warning("Eigendecomposition failed: %s", e)
-            lap_embedding = np.random.randn(self.n, self.n_components) * 0.1
-
-        # Transfer to GPU
-        positions = cp.asarray(lap_embedding, dtype=self.dtype)
-
-        self.logger.info("Laplacian embedding computed and transferred to GPU")
+        self._stage_end('initialization', start)
         return positions
 
-    def _select_index_type(self):
-        """
-        Automatically select optimal cuVS index type based on data size.
+    def _compute_scipy_spectral_embedding(self):
+        """Small-graph reference eigensolve on the host."""
+        upper = sp.triu(self.adjacency, k=1, format='csr')
+        adjacency = upper + upper.transpose()
+        adjacency.data = np.ones_like(adjacency.data, dtype=np.float32)
+        k = min(self.n_components + 1, self.n - 1)
+        if k <= self.n_components:
+            return cp.asarray(
+                np.random.standard_normal((self.n, self.n_components)),
+                dtype=self.dtype,
+            )
+        try:
+            normalized_laplacian = laplacian(adjacency, normed=True)
+            _, eigenvectors = spla.eigsh(
+                normalized_laplacian,
+                k=k,
+                which='SM',
+                tol=1e-3,
+            )
+            embedding = eigenvectors[:, 1:self.n_components + 1]
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            self.logger.warning("Host eigendecomposition failed: %s", exc)
+            embedding = np.random.standard_normal((self.n, self.n_components))
+        return cp.asarray(embedding, dtype=self.dtype)
 
-        Returns
-        -------
-        str
-            Selected index type.
+    def _compute_randomized_gpu_embedding(self):
+        """Approximate low-frequency Laplacian modes with sparse subspace iteration.
+
+        The shifted normalized adjacency ``(I + D^-1/2 A D^-1/2) / 2`` has
+        spectrum in ``[0, 1]``. Repeated sparse multiplies therefore retain the
+        desired low-frequency Laplacian subspace without a CPU eigensolve. The
+        trivial degree vector is projected out after every multiply.
         """
+        try:
+            import cupyx.scipy.sparse as cpx_sparse  # pylint: disable=import-outside-toplevel
+        except ImportError as exc:  # pragma: no cover - requires CUDA environment
+            raise ImportError("randomized initialization requires cupyx.scipy.sparse") from exc
+
+        source = self.edges[:, 0]
+        target = self.edges[:, 1]
+        rows = cp.concatenate((source, target))
+        cols = cp.concatenate((target, source))
+        values = cp.ones(rows.shape[0], dtype=self.dtype)
+        adjacency = cpx_sparse.csr_matrix(
+            (values, (rows, cols)), shape=(self.n, self.n), dtype=self.dtype
+        )
+        degrees = cp.bincount(rows, minlength=self.n).astype(self.dtype)
+        inverse_sqrt_degree = cp.where(degrees > 0, 1.0 / cp.sqrt(degrees), 0.0)
+        trivial = cp.sqrt(degrees).reshape(-1, 1)
+        trivial_norm = cp.sum(trivial * trivial)
+
+        basis = cp.random.standard_normal(
+            (self.n, self.n_components), dtype=self.dtype
+        )
+        for _ in range(max(self.spectral_iterations, 1)):
+            normalized = inverse_sqrt_degree[:, None] * basis
+            normalized = adjacency @ normalized
+            normalized = inverse_sqrt_degree[:, None] * normalized
+            basis = 0.5 * (basis + normalized)
+            if bool(trivial_norm > 0):
+                basis -= trivial @ ((trivial.T @ basis) / trivial_norm)
+            basis, _ = cp.linalg.qr(basis, mode='reduced')
+        return basis.astype(self.dtype, copy=False)
+
+    def _stage_start(self):
+        if not self.profile:
+            return None
+        cp.cuda.get_current_stream().synchronize()
+        return time.perf_counter()
+
+    def _stage_end(self, name, started):
+        if started is None:
+            return
+        cp.cuda.get_current_stream().synchronize()
+        self.timings[name] += time.perf_counter() - started
+
+    def _select_index_type(self, n_vectors=None):
+        """Select an index for the edge-midpoint dataset."""
         if self.index_type != 'auto':
             return self.index_type
+        n_vectors = self.n_edges if n_vectors is None else n_vectors
+        # Product quantization has no useful compression regime in GraphEm's
+        # usual 2--6 dimensions. IVF-Flat avoids an invalid/slow low-d PQ setup.
+        return 'ivf_flat' if n_vectors >= 100_000 else 'brute_force'
 
-        # Selection logic based on dataset size
-        if self.n > 1_000_000:
-            return 'ivf_pq'  # Best for very large datasets
-        if self.n > 100_000:
-            return 'ivf_flat'  # Good balance for large datasets
-        return 'brute_force'  # Exact for smaller datasets
+    def _build_knn_index(self, midpoints):
+        """Build a cuVS index whose row ids are edge ids."""
+        index_type = self._select_index_type(midpoints.shape[0])
+        if index_type == 'ivf_pq' and self.n_components < 8:
+            self.logger.warning("IVF-PQ is unsuitable below 8D; using IVF-Flat")
+            index_type = 'ivf_flat'
+        self._knn_kind = index_type
+        self._knn_search_params = None
 
-    def _build_knn_index(self):
-        """Build cuVS index for efficient KNN searches."""
-        if self.positions is None:
+        if index_type == 'brute_force':
+            self.knn_index = brute_force.build(midpoints, metric='sqeuclidean')
             return
 
-        index_type = self._select_index_type()
-        self.logger.info("Building cuVS index of type: %s", index_type)
-
-        with MemoryManager():
+        n_lists = max(2, min(int(math.sqrt(midpoints.shape[0])), 16_384))
+        if index_type == 'ivf_flat':
             try:
-                if index_type == 'brute_force':
-                    self.knn_index = brute_force.build(self.positions, metric='sqeuclidean')
-                elif index_type == 'ivf_flat':
-                    # Build IVF-Flat index with automatic parameter selection
-                    n_lists = min(int(np.sqrt(self.n)), 16384)
-                    self.knn_index = ivf_flat.build(
-                        self.positions,
-                        metric='sqeuclidean',
-                        n_lists=n_lists
-                    )
-                elif index_type == 'ivf_pq':
-                    # Build IVF-PQ index for memory efficiency
-                    n_lists = min(int(np.sqrt(self.n)), 16384)
-                    pq_dim = min(self.n_components, 64)
-                    self.knn_index = ivf_pq.build(
-                        self.positions,
-                        metric='sqeuclidean',
-                        n_lists=n_lists,
-                        pq_dim=pq_dim,
-                        pq_bits=8
-                    )
-                else:
-                    raise ValueError(f"Unknown index type: {index_type}")
+                params = ivf_flat.IndexParams(
+                    n_lists=n_lists,
+                    metric='sqeuclidean',
+                    kmeans_n_iters=10,
+                    kmeans_trainset_fraction=min(
+                        0.5, max(0.01, 200_000 / max(midpoints.shape[0], 1))
+                    ),
+                )
+                self.knn_index = ivf_flat.build(params, midpoints)
+                self._knn_search_params = ivf_flat.SearchParams(
+                    n_probes=min(32, n_lists)
+                )
+            except (AttributeError, TypeError):
+                # RAPIDS <=25.x compatibility.
+                self.knn_index = ivf_flat.build(
+                    midpoints, metric='sqeuclidean', n_lists=n_lists
+                )
+            return
 
-                self.logger.info("cuVS index built successfully")
+        try:
+            params = ivf_pq.IndexParams(
+                n_lists=n_lists,
+                metric='sqeuclidean',
+                pq_dim=min(64, self.n_components),
+                pq_bits=8,
+            )
+            self.knn_index = ivf_pq.build(params, midpoints)
+            self._knn_search_params = ivf_pq.SearchParams(n_probes=min(32, n_lists))
+        except (AttributeError, TypeError):
+            self.knn_index = ivf_pq.build(
+                midpoints,
+                metric='sqeuclidean',
+                n_lists=n_lists,
+                pq_dim=min(64, self.n_components),
+                pq_bits=8,
+            )
 
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                self.logger.error("Failed to build cuVS index: %s", e)
-                self.logger.info("Falling back to brute force search")
-                self.knn_index = None
+    @staticmethod
+    def _neighbors_from_search_result(result):
+        """Handle stable and legacy cuVS tuple ordering by output dtype."""
+        first, second = result
+        first = cp.asarray(first)
+        second = cp.asarray(second)
+        if first.dtype.kind in 'iu' and second.dtype.kind not in 'iu':
+            return first
+        if second.dtype.kind in 'iu':
+            return second
+        raise TypeError("cuVS search returned no integer neighbor array")
+
+    def _search_knn_index(self, queries, k):
+        if self._knn_kind == 'brute_force':
+            return self._neighbors_from_search_result(
+                brute_force.search(self.knn_index, queries, k)
+            )
+        module = ivf_flat if self._knn_kind == 'ivf_flat' else ivf_pq
+        if self._knn_search_params is not None:
+            result = module.search(
+                self._knn_search_params, self.knn_index, queries, k
+            )
+        else:
+            result = module.search(self.knn_index, queries, k)
+        return self._neighbors_from_search_result(result)
 
     def _locate_knn_midpoints_cuvs(
         self,
@@ -332,54 +516,38 @@ class GraphEmbedderCuVS:
         Tuple[cupy.ndarray, cupy.ndarray]
             KNN indices and sampled indices.
         """
-        self.logger.info("Computing kNN using cuVS")
-
         E = midpoints.shape[0]
+        if E <= 1 or k <= 0 or self.sample_size == 0:
+            return cp.empty((0, 0), dtype=cp.int64), cp.empty(0, dtype=cp.int64)
         sample_size = min(self.sample_size, E)
+        k = min(k, E - 1)
+        sampled_indices = (
+            cp.random.choice(E, size=sample_size, replace=False)
+            if sample_size < E else cp.arange(E, dtype=cp.int64)
+        )
+        sampled_midpoints = cp.ascontiguousarray(midpoints[sampled_indices])
+        reference = cp.ascontiguousarray(midpoints)
 
-        with MemoryManager():
-            # Sample midpoints
-            if sample_size < E:
-                sampled_indices = cp.random.choice(E, size=sample_size, replace=False)
-                sampled_midpoints = midpoints[sampled_indices]
-            else:
-                sampled_indices = cp.arange(E)
-                sampled_midpoints = midpoints
-
-            # Rebuild index if needed (positions may have changed)
-            if self.knn_index is None:
-                self._build_knn_index()
-
-            try:
-                # Use cuVS for KNN search
-                if self.knn_index is not None:
-                    if hasattr(brute_force, 'search'):
-                        indices, _ = brute_force.search(
-                            self.knn_index,
-                            sampled_midpoints,
-                            k + 1
-                        )
-                    else:
-                        # Alternative search method
-                        indices, _ = cuvs.neighbors.search(
-                            self.knn_index,
-                            sampled_midpoints,
-                            k + 1
-                        )
-                else:
-                    # Fallback to manual distance computation
-                    indices = self._manual_knn_search(sampled_midpoints, midpoints, k + 1)
-
-                # Remove self-neighbors
-                knn_indices = indices[:, 1:]
-
-                self.logger.info("cuVS kNN computation completed")
-                return knn_indices, sampled_indices
-
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                self.logger.error("cuVS KNN search failed: %s", e)
-                # Fallback to chunked distance computation
-                return self._fallback_knn_search(sampled_midpoints, midpoints, k)
+        try:
+            # Positions change every iteration, so a midpoint index cannot be
+            # safely reused. Its row identifiers now exactly match self.edges.
+            self._build_knn_index(reference)
+            neighbors = self._search_knn_index(sampled_midpoints, k + 1)
+            not_self = neighbors != sampled_indices[:, None]
+            order = cp.argsort(cp.logical_not(not_self), axis=1)
+            neighbors = cp.take_along_axis(neighbors, order, axis=1)
+            selected_neighbors = neighbors[:, :k]
+            self.knn_index = None
+            self._knn_search_params = None
+            return selected_neighbors, sampled_indices
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            self.logger.warning("cuVS midpoint search failed; using tiled exact search: %s", exc)
+            self.knn_index = None
+            self._knn_fallbacks += 1
+            self._knn_last_error = repr(exc)
+            return self._fallback_knn_search(
+                sampled_midpoints, reference, k, sampled_indices
+            )
 
     def _manual_knn_search(
         self,
@@ -388,48 +556,39 @@ class GraphEmbedderCuVS:
         k
     ):
         """Fallback manual KNN search using CuPy."""
-        # Compute all pairwise distances (memory intensive)
-        distances = cp.linalg.norm(
-            query_points[:, None, :] - reference_points[None, :, :],
-            axis=2
-        )
-
-        # Find k nearest neighbors
-        knn_indices = cp.argpartition(distances, k, axis=1)[:, :k]
-
-        return knn_indices
+        query_norm = cp.sum(query_points * query_points, axis=1, keepdims=True)
+        reference_norm = cp.sum(reference_points * reference_points, axis=1)[None, :]
+        distances = query_norm + reference_norm - 2.0 * (query_points @ reference_points.T)
+        return cp.argpartition(distances, kth=k - 1, axis=1)[:, :k]
 
     def _fallback_knn_search(
         self,
         sampled_midpoints,
         midpoints,
-        k
+        k,
+        sampled_indices
     ):
         """Fallback KNN search with chunked processing."""
         n_samples = sampled_midpoints.shape[0]
-        chunk_size = min(self.batch_size, n_samples)
+        free_bytes, _ = cp.cuda.runtime.memGetInfo()
+        memory_chunk = max(1, int((free_bytes * 0.15) // max(8 * midpoints.shape[0], 1)))
+        chunk_size = min(self.batch_size, memory_chunk, n_samples)
 
         all_indices = []
-        sampled_indices = cp.arange(n_samples)
-
         for i in range(0, n_samples, chunk_size):
             end_idx = min(i + chunk_size, n_samples)
             chunk = sampled_midpoints[i:end_idx]
 
-            # Compute distances
-            distances = cp.linalg.norm(
-                chunk[:, None, :] - midpoints[None, :, :],
-                axis=2
-            )
-
-            # Find k+1 nearest (including self)
-            indices = cp.argpartition(distances, k + 1, axis=1)[:, 1:k + 1]
-            all_indices.append(indices)
+            indices = self._manual_knn_search(chunk, midpoints, k + 1)
+            self_ids = sampled_indices[i:end_idx, None]
+            valid = indices != self_ids
+            order = cp.argsort(cp.logical_not(valid), axis=1)
+            indices = cp.take_along_axis(indices, order, axis=1)
+            all_indices.append(indices[:, :k])
 
         knn_indices = cp.concatenate(all_indices, axis=0)
         return knn_indices, sampled_indices
 
-    @monitor_memory_usage
     def _compute_spring_forces_cuvs(
         self,
         positions,
@@ -450,29 +609,34 @@ class GraphEmbedderCuVS:
         cupy.ndarray
             Spring forces for each vertex.
         """
-        with MemoryManager():
-            # Get edge endpoints
-            p1 = positions[edges[:, 0]]
-            p2 = positions[edges[:, 1]]
+        forces = cp.zeros_like(positions)
+        direction = 1.0 if self.force_mode == 'attractive' else -1.0
+        for offset in range(0, edges.shape[0], self.edge_chunk_size):
+            edge_chunk = edges[offset:offset + self.edge_chunk_size]
+            source = edge_chunk[:, 0]
+            target = edge_chunk[:, 1]
+            difference = positions[target] - positions[source]
+            distance = cp.linalg.norm(difference, axis=1, keepdims=True) + 1e-6
+            edge_forces = (
+                direction * self.k_attr * (distance - self.L_min)
+                * (difference / distance)
+            )
+            # Bincount uses reduction kernels instead of the highly contended
+            # add.at atomics that dominate on graphs with hubs.
+            for component in range(self.n_components):
+                source_force = cp.bincount(
+                    source,
+                    weights=edge_forces[:, component],
+                    minlength=self.n,
+                )
+                target_force = cp.bincount(
+                    target,
+                    weights=-edge_forces[:, component],
+                    minlength=self.n,
+                )
+                forces[:, component] += source_force + target_force
+        return forces
 
-            # Compute edge vectors and distances
-            diff = p2 - p1
-            dist = cp.linalg.norm(diff, axis=1, keepdims=True) + 1e-6
-
-            # Compute force magnitude
-            force_magnitude = -self.k_attr * (dist - self.L_min)
-
-            # Compute force vectors
-            edge_forces = force_magnitude * (diff / dist)
-
-            # Accumulate forces on vertices using advanced indexing
-            forces = cp.zeros_like(positions)
-            cp.add.at(forces, edges[:, 0], edge_forces)
-            cp.add.at(forces, edges[:, 1], -edge_forces)
-
-            return forces
-
-    @monitor_memory_usage
     def _compute_intersection_forces_cuvs(
         self,
         positions,
@@ -485,74 +649,68 @@ class GraphEmbedderCuVS:
 
         Similar to PyTorch version but using CuPy for GPU acceleration.
         """
-        with MemoryManager():
-            # Generate edge pairs
-            _, n_neighbors = knn_indices.shape
-            candidate_i = cp.repeat(sampled_indices, n_neighbors)
-            candidate_j = knn_indices.flatten()
+        if knn_indices.size == 0:
+            return cp.zeros_like(positions)
+        _, n_neighbors = knn_indices.shape
+        candidate_i = cp.repeat(sampled_indices, n_neighbors)
+        candidate_j = knn_indices.reshape(-1)
+        valid_mask = (
+            (candidate_j >= 0) &
+            (candidate_j < edges.shape[0]) &
+            (candidate_i != candidate_j)
+        )
+        # An all-edge query sees every pair twice. Random query sampling does not,
+        # so imposing i<j there would discard roughly half the estimator.
+        if sampled_indices.shape[0] == edges.shape[0]:
+            valid_mask &= candidate_i < candidate_j
+        if not bool(cp.any(valid_mask)):
+            return cp.zeros_like(positions)
 
-            # Filter valid pairs
-            valid_mask = candidate_i < candidate_j
+        edges_i = edges[candidate_i[valid_mask]]
+        edges_j = edges[candidate_j[valid_mask]]
+        share_mask = (
+            (edges_i[:, 0] == edges_j[:, 0]) |
+            (edges_i[:, 0] == edges_j[:, 1]) |
+            (edges_i[:, 1] == edges_j[:, 0]) |
+            (edges_i[:, 1] == edges_j[:, 1])
+        )
+        interaction_mask = ~share_mask
+        if not bool(cp.any(interaction_mask)):
+            return cp.zeros_like(positions)
+        edges_i = edges_i[interaction_mask]
+        edges_j = edges_j[interaction_mask]
 
-            if not valid_mask.any():
-                return cp.zeros_like(positions)
+        p1 = positions[edges_i[:, 0]]
+        p2 = positions[edges_i[:, 1]]
+        q1 = positions[edges_j[:, 0]]
+        q2 = positions[edges_j[:, 1]]
+        intersect_mask = self._check_line_intersections_cuvs(p1, p2, q1, q2)
+        if not bool(cp.any(intersect_mask)):
+            return cp.zeros_like(positions)
+        edges_i = edges_i[intersect_mask]
+        edges_j = edges_j[intersect_mask]
+        p1, p2 = p1[intersect_mask], p2[intersect_mask]
+        q1, q2 = q1[intersect_mask], q2[intersect_mask]
+        crossing_centers = (p1 + p2 + q1 + q2) / 4.0
 
-            # Get valid pairs
-            valid_i = candidate_i[valid_mask]
-            valid_j = candidate_j[valid_mask]
-
-            edges_i = edges[valid_i]
-            edges_j = edges[valid_j]
-
-            # Check for shared vertices
-            share_mask = (
-                (edges_i[:, 0] == edges_j[:, 0]) |
-                (edges_i[:, 0] == edges_j[:, 1]) |
-                (edges_i[:, 1] == edges_j[:, 0]) |
-                (edges_i[:, 1] == edges_j[:, 1])
-            )
-
-            interaction_mask = ~share_mask
-
-            if not interaction_mask.any():
-                return cp.zeros_like(positions)
-
-            # Filter to interacting pairs
-            edges_i = edges_i[interaction_mask]
-            edges_j = edges_j[interaction_mask]
-
-            # Get endpoints
-            p1 = positions[edges_i[:, 0]]
-            p2 = positions[edges_i[:, 1]]
-            q1 = positions[edges_j[:, 0]]
-            q2 = positions[edges_j[:, 1]]
-
-            # Check intersections
-            intersect_mask = self._check_line_intersections_cuvs(p1, p2, q1, q2)
-
-            if not intersect_mask.any():
-                return cp.zeros_like(positions)
-
-            # Compute repulsion forces
-            edges_i = edges_i[intersect_mask]
-            edges_j = edges_j[intersect_mask]
-            p1, p2 = p1[intersect_mask], p2[intersect_mask]
-            q1, q2 = q1[intersect_mask], q2[intersect_mask]
-
-            inter_midpoints = (p1 + p2 + q1 + q2) / 4.0
-
-            # Compute forces
-            forces = cp.zeros_like(positions)
-
-            for vertex_pos, edge_vertices in [(p1, edges_i[:, 0]), (p2, edges_i[:, 1]),
-                                            (q1, edges_j[:, 0]), (q2, edges_j[:, 1])]:
-                diff = vertex_pos - inter_midpoints
-                dist = cp.linalg.norm(diff, axis=1, keepdims=True) + 1e-6
-                repulsion = self.k_inter * diff / (dist ** 2)
-
-                cp.add.at(forces, edge_vertices, repulsion)
-
-            return forces
+        forces = cp.zeros_like(positions)
+        contributions = (
+            (p1, edges_i[:, 0]),
+            (p2, edges_i[:, 1]),
+            (q1, edges_j[:, 0]),
+            (q2, edges_j[:, 1]),
+        )
+        for vertex_positions, vertex_ids in contributions:
+            difference = vertex_positions - crossing_centers
+            distance = cp.linalg.norm(difference, axis=1, keepdims=True) + 1e-6
+            repulsion = self.k_inter * difference / (distance * distance)
+            for component in range(self.n_components):
+                forces[:, component] += cp.bincount(
+                    vertex_ids,
+                    weights=repulsion[:, component],
+                    minlength=self.n,
+                )
+        return forces
 
     def _check_line_intersections_cuvs(
         self,
@@ -575,33 +733,51 @@ class GraphEmbedderCuVS:
 
     def update_positions(self):
         """Update vertex positions using cuVS-accelerated computations."""
-        self.logger.info("Updating positions using cuVS backend")
+        started = self._stage_start()
+        spring_forces = self._compute_spring_forces_cuvs(self.positions, self.edges)
+        self._stage_end('spring', started)
 
-        with MemoryManager():
-            # Compute spring forces
-            spring_forces = self._compute_spring_forces_cuvs(self.positions, self.edges)
-
-            # Compute edge midpoints
-            midpoints = (self.positions[self.edges[:, 0]] + self.positions[self.edges[:, 1]]) / 2.0
-
-            # Find nearest neighbors using cuVS
-            knn_indices, sampled_indices = self._locate_knn_midpoints_cuvs(midpoints, self.n_neighbors)
-
-            # Compute intersection forces
-            inter_forces = self._compute_intersection_forces_cuvs(
-                self.positions, self.edges, knn_indices, sampled_indices
+        intersection_forces = cp.zeros_like(self.positions)
+        use_intersections = (
+            self.k_inter > 0 and
+            self.n_components >= 2 and
+            self.n_edges > 1
+        )
+        if use_intersections:
+            refresh_neighbors = (
+                self._cached_knn_indices is None
+                or self._iteration % self.intersection_interval == 0
             )
+            if refresh_neighbors:
+                started = self._stage_start()
+                midpoints = 0.5 * (
+                    self.positions[self.edges[:, 0]] + self.positions[self.edges[:, 1]]
+                )
+                self._cached_knn_indices, self._cached_sampled_indices = (
+                    self._locate_knn_midpoints_cuvs(midpoints, self.n_neighbors)
+                )
+                self._stage_end('midpoint_knn', started)
+            started = self._stage_start()
+            intersection_forces = self._compute_intersection_forces_cuvs(
+                self.positions,
+                self.edges,
+                self._cached_knn_indices,
+                self._cached_sampled_indices,
+            )
+            self._stage_end('intersections', started)
 
-            # Combine and apply forces
-            total_forces = spring_forces + inter_forces
-            new_positions = self.positions + total_forces
+        total_forces = spring_forces + intersection_forces
+        if self.max_displacement is not None:
+            norms = cp.linalg.norm(total_forces, axis=1, keepdims=True) + 1e-12
+            total_forces *= cp.minimum(1.0, self.max_displacement / norms)
 
-            # Normalize positions
-            new_positions = new_positions - cp.mean(new_positions, axis=0, keepdims=True)
-            std = cp.std(new_positions, axis=0, keepdims=True) + 1e-6
-            self.positions = new_positions / std
-
-        self.logger.info("Position update completed")
+        started = self._stage_start()
+        new_positions = self.positions + self.learning_rate * total_forces
+        new_positions -= cp.mean(new_positions, axis=0, keepdims=True)
+        scale = cp.std(new_positions, axis=0, keepdims=True) + 1e-6
+        self.positions = new_positions / scale
+        self._stage_end('normalization', started)
+        self._iteration += 1
 
     def run_layout(self, num_iterations=100):
         """
@@ -619,16 +795,14 @@ class GraphEmbedderCuVS:
         """
         self.logger.info("Running cuVS-accelerated layout for %d iterations", num_iterations)
 
-        with MemoryManager(cleanup_on_exit=True):
-            for iteration in tqdm(range(num_iterations), desc="Layout iterations"):
-                self.update_positions()
-
-                # Rebuild index periodically for better accuracy
-                if (iteration + 1) % 20 == 0:
-                    self._build_knn_index()
-
-                if self.verbose and (iteration + 1) % 10 == 0:
-                    self.logger.info("Completed iteration %d/%d", iteration + 1, num_iterations)
+        if num_iterations < 0:
+            raise ValueError("num_iterations must be non-negative")
+        for iteration in tqdm(
+            range(num_iterations), desc="Layout iterations", disable=not self.verbose
+        ):
+            self.update_positions()
+            if self.verbose and (iteration + 1) % 10 == 0:
+                self.logger.info("Completed iteration %d/%d", iteration + 1, num_iterations)
 
         self.logger.info("cuVS layout computation completed")
         return self.positions
@@ -636,6 +810,96 @@ class GraphEmbedderCuVS:
     def get_positions(self):
         """Get vertex positions as numpy array."""
         return cp.asnumpy(self.positions)
+
+    def get_scores(self, as_numpy=True):
+        """Return radial node scores, optionally leaving them on the GPU."""
+        scores = cp.linalg.norm(self.positions, axis=1)
+        return cp.asnumpy(scores) if as_numpy else scores
+
+    def topk_nodes(self, k):
+        """Return top radial node ids while transferring only ``k`` integers."""
+        if not 0 <= k <= self.n:
+            raise ValueError("k must be between zero and the number of vertices")
+        if k == 0:
+            return []
+        scores = self.get_scores(as_numpy=False)
+        candidates = cp.argpartition(scores, self.n - k)[-k:]
+        candidates = candidates[cp.argsort(scores[candidates])[::-1]]
+        return cp.asnumpy(candidates).astype(np.int64).tolist()
+
+    def diverse_topk_nodes(self, k, diversity=0.2, candidate_pool_size=None):
+        """Select high-score nodes while spreading them in embedding space.
+
+        This addresses a common influence-maximization failure mode in which the
+        highest radial nodes are geometrically redundant. Work is O(kCd), where C
+        is a bounded candidate pool, and remains entirely on the GPU.
+        """
+        if not 0 <= k <= self.n:
+            raise ValueError("k must be between zero and the number of vertices")
+        if not 0.0 <= diversity <= 1.0:
+            raise ValueError("diversity must be between zero and one")
+        if k == 0:
+            return []
+        if candidate_pool_size is None:
+            candidate_pool_size = min(self.n, max(10_000, 200 * k))
+        candidate_pool_size = min(self.n, int(candidate_pool_size))
+        if candidate_pool_size < k:
+            raise ValueError("candidate_pool_size must be at least k")
+
+        scores = self.get_scores(as_numpy=False)
+        candidates = cp.argpartition(
+            scores, self.n - candidate_pool_size
+        )[-candidate_pool_size:]
+        candidate_scores = scores[candidates]
+        relevance = (candidate_scores - cp.min(candidate_scores)) / (
+            cp.max(candidate_scores) - cp.min(candidate_scores) + 1e-12
+        )
+        candidate_positions = self.positions[candidates]
+        chosen = cp.zeros(candidate_pool_size, dtype=cp.bool_)
+        first = int(cp.argmax(candidate_scores).item())
+        selected_local = [first]
+        chosen[first] = True
+        minimum_distance = cp.sum(
+            (candidate_positions - candidate_positions[first]) ** 2, axis=1
+        )
+
+        while len(selected_local) < k:
+            distance_score = minimum_distance / (cp.max(minimum_distance) + 1e-12)
+            utility = (1.0 - diversity) * relevance + diversity * distance_score
+            utility[chosen] = -cp.inf
+            selected = int(cp.argmax(utility).item())
+            selected_local.append(selected)
+            chosen[selected] = True
+            distance = cp.sum(
+                (candidate_positions - candidate_positions[selected]) ** 2, axis=1
+            )
+            minimum_distance = cp.minimum(minimum_distance, distance)
+        return cp.asnumpy(candidates[cp.asarray(selected_local)]).astype(np.int64).tolist()
+
+    def get_diagnostics(self):
+        """Return algorithm choices and synchronized stage timings."""
+        return {
+            'n_vertices': self.n,
+            'n_edges': self.n_edges,
+            'initialization': (
+                'spectral'
+                if self.initialization == 'auto'
+                and self.adjacency is not None
+                and self.n <= self.spectral_max_vertices
+                else 'randomized' if self.initialization == 'auto'
+                else self.initialization
+            ),
+            'force_mode': self.force_mode,
+            'index_type': self._select_index_type(),
+            'sample_size': self.sample_size,
+            'edge_chunk_size': self.edge_chunk_size,
+            'intersection_interval': self.intersection_interval,
+            'midpoint_index_refresh_interval': self.intersection_interval,
+            'iterations_completed': self._iteration,
+            'knn_fallbacks': self._knn_fallbacks,
+            'knn_last_error': self._knn_last_error,
+            'timings_seconds': dict(self.timings),
+        }
 
     def display_layout(
         self,
@@ -726,10 +990,3 @@ class GraphEmbedderCuVS:
         """String representation."""
         return (f"GraphEmbedderCuVS(n_vertices={self.n}, n_components={self.n_components}, "
                 f"index_type={self._select_index_type()})")
-
-    def __del__(self):
-        """Cleanup GPU resources."""
-        try:
-            cleanup_gpu_memory()
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.warning("GPU memory cleanup failed: %s", e)

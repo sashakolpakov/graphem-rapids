@@ -32,6 +32,9 @@ from .generators import (
     generate_delaunay_triangulation
 )
 from .influence import (
+    InfluenceEstimate,
+    degree_discount_seed_selection,
+    estimate_independent_cascade,
     graphem_seed_selection,
     ndlib_estimated_influence,
     greedy_seed_selection
@@ -45,7 +48,7 @@ from .visualization import (
 from .datasets import load_dataset
 
 # Version info
-__version__ = '0.2.1'
+__version__ = '0.3.0.dev0'
 
 # Backend availability flags
 _TORCH_AVAILABLE = False
@@ -59,14 +62,10 @@ except ImportError:
     pass
 
 try:
-    import cudf
-    import cuml
+    import cupy
+    import cuvs
     _RAPIDS_AVAILABLE = True
-    try:
-        import cuvs
-        _CUVS_AVAILABLE = True
-    except ImportError:
-        pass
+    _CUVS_AVAILABLE = True
 except ImportError:
     pass
 
@@ -78,9 +77,11 @@ else:
 
 
 def create_graphem(
-    adjacency,
+    adjacency=None,
     n_components=2,
     backend=None,
+    edges=None,
+    n_vertices=None,
     **kwargs
 ):
     """
@@ -113,12 +114,18 @@ def create_graphem(
     >>> embedder.run_layout(num_iterations=50)
     >>> embedder.display_layout()
     """
-    # Infer n_vertices from adjacency matrix shape
-    n_vertices = adjacency.shape[0]
+    if (adjacency is None) == (edges is None):
+        raise ValueError("provide exactly one of adjacency or edges")
+    if adjacency is not None:
+        graph_n_vertices = adjacency.shape[0]
+    elif n_vertices is not None:
+        graph_n_vertices = int(n_vertices)
+    else:
+        raise ValueError("n_vertices is required with a GPU edge list")
 
     # Configure backend
     config = BackendConfig(
-        n_vertices=n_vertices,
+        n_vertices=graph_n_vertices,
         n_components=n_components
     )
     config.force_backend = backend
@@ -127,8 +134,17 @@ def create_graphem(
     optimal_backend = get_optimal_backend(config)
 
     # Create embedder with selected backend
-    if optimal_backend == 'cuvs' and _RAPIDS_AVAILABLE and _CUVS_AVAILABLE and GraphEmbedderCuVS is not None:
-        return GraphEmbedderCuVS(adjacency, n_components, **kwargs)
+    if optimal_backend == 'cuvs' and _CUVS_AVAILABLE and GraphEmbedderCuVS is not None:
+        return GraphEmbedderCuVS(
+            adjacency=adjacency,
+            edges=edges,
+            n_vertices=graph_n_vertices,
+            n_components=n_components,
+            **kwargs,
+        )
+
+    if edges is not None:
+        raise ImportError("GPU edge-list input requires the cuVS backend")
 
     if optimal_backend in ['pytorch', 'cuda'] and _TORCH_AVAILABLE:
         return GraphEmbedderPyTorch(adjacency, n_components, **kwargs)
@@ -197,6 +213,9 @@ __all__ = [
     'generate_delaunay_triangulation',
 
     # Influence maximization
+    'InfluenceEstimate',
+    'degree_discount_seed_selection',
+    'estimate_independent_cascade',
     'graphem_seed_selection',
     'ndlib_estimated_influence',
     'greedy_seed_selection',
@@ -251,8 +270,9 @@ def _show_backend_info():
     print(f"Recommended backend: {info['recommended_backend'].upper()}")
 
 
-# Show info on import unless in testing environment
-if os.environ.get('GRAPHEM_RAPIDS_QUIET', 'false').lower() != 'true':
+# Library imports stay silent so benchmark stdout can be machine-readable. The
+# console entry point remains available, and interactive users may opt in.
+if os.environ.get('GRAPHEM_RAPIDS_SHOW_INFO', 'false').lower() == 'true':
     try:
         _show_backend_info()
     except Exception:  # pylint: disable=broad-exception-caught

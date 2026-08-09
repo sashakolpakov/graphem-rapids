@@ -68,10 +68,11 @@ def check_rapids_availability():
     }
 
     try:
-        import cudf  # pylint: disable=import-outside-toplevel
+        import cupy  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
+        import cuvs  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
         info['available'] = True
-        info['cudf_available'] = True
-        info['version'] = cudf.__version__
+        info['cuvs_available'] = True
+        info['version'] = getattr(cuvs, '__version__', None)
 
         try:
             import cuml  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
@@ -80,8 +81,8 @@ def check_rapids_availability():
             pass
 
         try:
-            import cuvs  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
-            info['cuvs_available'] = True
+            import cudf  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
+            info['cudf_available'] = True
         except ImportError:
             pass
 
@@ -109,8 +110,11 @@ def sigmoid(x, offset=0.0, scale=1.0):
     float
         Sigmoid output between 0 and 1
     """
-    exp_term = math.exp((x - offset) / scale)
-    return exp_term / (1 + exp_term)
+    value = (x - offset) / scale
+    if value >= 0:
+        return 1.0 / (1.0 + math.exp(-value))
+    exp_term = math.exp(value)
+    return exp_term / (1.0 + exp_term)
 
 
 def get_data_complexity_score(config):

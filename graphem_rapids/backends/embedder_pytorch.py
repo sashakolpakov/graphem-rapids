@@ -63,7 +63,8 @@ class GraphEmbedderPyTorch:
         memory_efficient=True,
         verbose=True,
         logger_instance=None,
-        seed=None
+        seed=None,
+        force_mode='legacy'
     ):
         """
         Initialize the PyTorch GraphEmbedder.
@@ -138,12 +139,15 @@ class GraphEmbedderPyTorch:
         self.n_neighbors = n_neighbors
         self.memory_efficient = memory_efficient
         self.batch_size = batch_size  # None for automatic, or user-defined value
+        self.force_mode = force_mode
 
         # Validate parameters
         if n_components <= 0:
             raise ValueError(f"Number of components must be positive, got {n_components}")
         if k_attr < 0:
             raise ValueError(f"Attractive force constant k_attr must be non-negative, got {k_attr}")
+        if force_mode not in ('legacy', 'attractive'):
+            raise ValueError("force_mode must be 'legacy' or 'attractive'")
         self.verbose = verbose
 
         # Extract edges from adjacency matrix
@@ -361,8 +365,17 @@ class GraphEmbedderPyTorch:
             # Compute eigenvectors
             k = self.n_components + 1
             try:
-                _, eigenvectors = spla.eigsh(L, k, which='SM')
-                lap_embedding = eigenvectors[:, 1:k]  # Skip first eigenvector
+                if k >= self.n:
+                    _, eigenvectors = np.linalg.eigh(L.toarray())
+                    lap_embedding = eigenvectors[:, 1:1 + self.n_components]
+                    if lap_embedding.shape[1] < self.n_components:
+                        padding = np.random.randn(
+                            self.n, self.n_components - lap_embedding.shape[1]
+                        ) * 0.1
+                        lap_embedding = np.column_stack((lap_embedding, padding))
+                else:
+                    _, eigenvectors = spla.eigsh(L, k, which='SM')
+                    lap_embedding = eigenvectors[:, 1:k]  # Skip first eigenvector
             except Exception as e:  # pylint: disable=broad-exception-caught
                 self.logger.warning("Eigendecomposition failed: %s", e)
                 # Fallback to random initialization
@@ -632,8 +645,10 @@ class GraphEmbedderPyTorch:
             diff = p2 - p1
             dist = torch.norm(diff, dim=1, keepdim=True) + 1e-6
 
-            # Compute force magnitude (spring law)
-            force_magnitude = -self.k_attr * (dist - self.L_min)
+            # ``diff`` points from source to target. The paper's Hooke force is
+            # positive in this convention; v0.2.x used the negative sign.
+            direction = 1.0 if self.force_mode == 'attractive' else -1.0
+            force_magnitude = direction * self.k_attr * (dist - self.L_min)
 
             # Compute force vectors
             edge_forces = force_magnitude * (diff / dist)
@@ -832,7 +847,9 @@ class GraphEmbedderPyTorch:
         self.logger.info("Running layout for %d iterations", num_iterations)
 
         with MemoryManager(cleanup_on_exit=True):
-            for iteration in tqdm(range(num_iterations), desc="Layout iterations"):
+            for iteration in tqdm(
+                range(num_iterations), desc="Layout iterations", disable=not self.verbose
+            ):
                 self.update_positions()
 
                 # Optional: log progress
@@ -852,6 +869,57 @@ class GraphEmbedderPyTorch:
             Vertex positions.
         """
         return self.positions  # Uses property which already returns numpy array
+
+    def get_scores(self, as_numpy=True):
+        """Return radial node scores."""
+        scores = torch.linalg.norm(self._positions, dim=1)
+        return scores.detach().cpu().numpy() if as_numpy else scores
+
+    def topk_nodes(self, k):
+        """Return top radial node ids without copying all positions."""
+        if not 0 <= k <= self.n:
+            raise ValueError("k must be between zero and the number of vertices")
+        if k == 0:
+            return []
+        return torch.topk(self.get_scores(as_numpy=False), k=k).indices.cpu().tolist()
+
+    def diverse_topk_nodes(self, k, diversity=0.2, candidate_pool_size=None):
+        """Select high radial scores with embedding-space diversification."""
+        if not 0 <= k <= self.n:
+            raise ValueError("k must be between zero and the number of vertices")
+        if not 0.0 <= diversity <= 1.0:
+            raise ValueError("diversity must be between zero and one")
+        if k == 0:
+            return []
+        if candidate_pool_size is None:
+            candidate_pool_size = min(self.n, max(10_000, 200 * k))
+        candidate_pool_size = min(self.n, int(candidate_pool_size))
+        if candidate_pool_size < k:
+            raise ValueError("candidate_pool_size must be at least k")
+
+        scores = self.get_scores(as_numpy=False)
+        candidate_scores, candidates = torch.topk(scores, k=candidate_pool_size)
+        relevance = (candidate_scores - candidate_scores.min()) / (
+            candidate_scores.max() - candidate_scores.min() + 1e-12
+        )
+        positions = self._positions[candidates]
+        chosen = torch.zeros(candidate_pool_size, device=self.device, dtype=torch.bool)
+        first = 0
+        selected_local = [first]
+        chosen[first] = True
+        minimum_distance = torch.sum((positions - positions[first]) ** 2, dim=1)
+
+        while len(selected_local) < k:
+            distance_score = minimum_distance / (minimum_distance.max() + 1e-12)
+            utility = (1.0 - diversity) * relevance + diversity * distance_score
+            utility[chosen] = -torch.inf
+            selected = int(torch.argmax(utility).item())
+            selected_local.append(selected)
+            chosen[selected] = True
+            distance = torch.sum((positions - positions[selected]) ** 2, dim=1)
+            minimum_distance = torch.minimum(minimum_distance, distance)
+        local_indices = torch.tensor(selected_local, device=self.device)
+        return candidates[local_indices].cpu().tolist()
 
     def display_layout(
         self,

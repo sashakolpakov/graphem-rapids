@@ -84,6 +84,10 @@ Influence Maximization
 
 .. autofunction:: graphem_rapids.graphem_seed_selection
 
+.. autofunction:: graphem_rapids.degree_discount_seed_selection
+
+.. autofunction:: graphem_rapids.estimate_independent_cascade
+
 .. autofunction:: graphem_rapids.ndlib_estimated_influence
 
 .. autofunction:: graphem_rapids.greedy_seed_selection

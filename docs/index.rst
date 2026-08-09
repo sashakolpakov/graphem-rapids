@@ -13,11 +13,11 @@ High-performance graph embedding using PyTorch and RAPIDS cuVS. Force-directed l
 Features
 --------
 
-* **Unified API**: Scipy sparse adjacency matrices, sklearn-style parameters
-* **Multiple Backends**: PyTorch (1K-100K vertices), RAPIDS cuVS (100K+ vertices)
-* **GPU Acceleration**: CUDA support, memory-efficient chunking, automatic CPU fallback
+* **Unified API**: SciPy sparse adjacency matrices or GPU-resident edge lists
+* **Multiple Backends**: PyTorch and a CuPy/cuVS large-graph path
+* **GPU Acceleration**: sparse initialization, bounded edge batching, and on-device top-k
 * **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
-* **Influence Maximization**: Fast embedding-based seed selection
+* **Influence Maximization**: embedding and degree-discount selection with repeated IC evaluation
 
 Quick Start
 -----------

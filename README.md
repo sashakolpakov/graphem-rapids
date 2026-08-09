@@ -29,11 +29,11 @@ High-performance [GraphEm](https://github.com/sashakolpakov/graphem) implementat
 
 ## Features
 
-- **Unified API**: Scipy sparse adjacency matrices, sklearn-style parameters (`n_components`, `n_neighbors`)
-- **Multiple Backends**: PyTorch (1K-100K vertices), RAPIDS cuVS (100K+ vertices), automatic selection
-- **GPU Acceleration**: CUDA support, memory-efficient chunking, automatic CPU fallback
+- **Unified API**: SciPy sparse adjacency matrices or GPU-resident canonical edge lists
+- **Multiple Backends**: PyTorch for small/medium graphs and a CuPy/cuVS large-graph path
+- **GPU-Native Scaling**: sparse randomized spectral initialization, bounded edge batching, and on-device top-k selection
 - **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
-- **Influence Maximization**: Fast embedding-based seed selection
+- **Influence Maximization**: embedding and degree-discount selection with reproducible batched IC evaluation
 
 ## Installation
 
@@ -83,12 +83,42 @@ embedder = gr.GraphEmbedderPyTorch(
 ```python
 embedder = gr.GraphEmbedderCuVS(
     adjacency, n_components=3,
-    index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
-    sample_size=1024, batch_size=None
+    index_type='auto',
+    sample_size=None,              # scale samples with graph size
+    force_mode='legacy',           # or paper-consistent 'attractive'
+    intersection_interval=5,       # refresh midpoint ANN every five steps
+    edge_chunk_size=2_000_000,
 )
 ```
 
-**Index Types**: `brute_force` (<100K), `ivf_flat` (100K-1M), `ivf_pq` (>1M vertices)
+The index is rebuilt over current **edge midpoints**, and returned row ids are edge
+ids. Automatic selection uses brute force below 100K midpoints and IVF-Flat above
+that threshold. IVF-PQ is not selected automatically because product quantization
+is a poor fit for the usual 2–6 dimensional layout.
+
+For graphs that should never pass through a host adjacency matrix:
+
+```python
+import cupy as cp
+
+# One canonical row (u < v) per undirected edge, already on the GPU.
+edges = cp.asarray([[0, 1], [1, 2], [2, 3]], dtype=cp.int32)
+embedder = gr.create_graphem(
+    edges=edges,
+    n_vertices=4,
+    backend='cuvs',
+    n_components=2,
+    assume_canonical_edges=True,
+    initialization='randomized',
+)
+embedder.run_layout(20)
+top_nodes = embedder.topk_nodes(2)  # transfers two ids, not all positions
+```
+
+The paper's Hooke equation and the v0.2.x implementation use opposite signs.
+`force_mode='legacy'` preserves existing results; `force_mode='attractive'`
+implements the written equation. Keep this choice explicit until a quality sweep
+selects a default.
 
 ### Check Backends
 ```python
@@ -157,14 +187,19 @@ embedder.run_layout(num_iterations=50)
 # Fast: embedding-based selection
 seeds = gr.graphem_seed_selection(embedder, k=10)
 
-# Evaluate with Independent Cascade model
-import networkx as nx
-G = nx.from_scipy_sparse_array(adjacency)
-influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=100)
+# Evaluate 256 independent cascades (CPU or CuPy CUDA backend)
+estimate = gr.estimate_independent_cascade(
+    adjacency, seeds, p=0.1, n_simulations=256, random_seed=42
+)
+print(estimate.mean, estimate.stderr)
 
-# Compare with greedy (slow, optimal)
-greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
+# Scalable cascade-aware baseline
+discount_seeds = gr.degree_discount_seed_selection(adjacency, k=10, p=0.1)
 ```
+
+The NDlib and exhaustive greedy functions remain compatibility helpers. Their
+`iterations_count` is a diffusion time-step limit, not a Monte Carlo trial count,
+and the old greedy routine is not a scalable or exact baseline.
 
 ## Advanced
 
@@ -205,7 +240,12 @@ pytest                                          # Run all tests
 pytest tests/test_pytorch_backend.py            # Specific backend
 python benchmarks/run_benchmarks.py             # Performance tests
 python benchmarks/compare_backends.py --sizes 1000,10000,100000
+python benchmarks/diagnose_force_modes.py        # Paper vs legacy spring sign
+python benchmarks/benchmark_h100.py --help       # End-to-end million-scale test
 ```
+
+See [the H100 runbook](docs/h100-benchmark.md) and [reviewer/engineering
+triage](docs/reviewer-triage.md) before interpreting benchmark results.
 
 ## Contributing
 
