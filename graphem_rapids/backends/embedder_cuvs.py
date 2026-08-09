@@ -34,6 +34,54 @@ logger = logging.getLogger(__name__)
 
 
 _SPRING_KERNEL_SOURCE = r"""
+extern "C" __global__ void degree_counts_i32(
+    const int* edges,
+    unsigned long long* degrees,
+    unsigned int* invalid_endpoint,
+    const long long n_edges,
+    const long long n_vertices)
+{
+    long long edge_id =
+        static_cast<long long>(blockDim.x) * blockIdx.x + threadIdx.x;
+    const long long stride =
+        static_cast<long long>(blockDim.x) * gridDim.x;
+    for (; edge_id < n_edges; edge_id += stride) {
+        const long long source = static_cast<long long>(edges[2 * edge_id]);
+        const long long target = static_cast<long long>(edges[2 * edge_id + 1]);
+        if (source < 0 || source >= n_vertices ||
+                target < 0 || target >= n_vertices) {
+            atomicExch(invalid_endpoint, 1u);
+            continue;
+        }
+        atomicAdd(&degrees[source], 1ULL);
+        atomicAdd(&degrees[target], 1ULL);
+    }
+}
+
+extern "C" __global__ void degree_counts_i64(
+    const long long* edges,
+    unsigned long long* degrees,
+    unsigned int* invalid_endpoint,
+    const long long n_edges,
+    const long long n_vertices)
+{
+    long long edge_id =
+        static_cast<long long>(blockDim.x) * blockIdx.x + threadIdx.x;
+    const long long stride =
+        static_cast<long long>(blockDim.x) * gridDim.x;
+    for (; edge_id < n_edges; edge_id += stride) {
+        const long long source = edges[2 * edge_id];
+        const long long target = edges[2 * edge_id + 1];
+        if (source < 0 || source >= n_vertices ||
+                target < 0 || target >= n_vertices) {
+            atomicExch(invalid_endpoint, 1u);
+            continue;
+        }
+        atomicAdd(&degrees[source], 1ULL);
+        atomicAdd(&degrees[target], 1ULL);
+    }
+}
+
 extern "C" __global__ void spring_forces_i32(
     const float* positions,
     const int* edges,
@@ -465,9 +513,7 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
         self.edges = cp.ascontiguousarray(device_edges)
         self.n_edges = int(self.edges.shape[0])
         if self.n_edges:
-            self.degrees = cp.bincount(
-                self.edges.reshape(-1), minlength=self.n
-            ).astype(cp.float32, copy=False)
+            self.degrees = self._count_device_degrees()
         else:
             self.degrees = cp.zeros(self.n, dtype=cp.float32)
         self._active_mask = self.degrees > 0
@@ -576,6 +622,47 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
         self.knn_index = None
         self._knn_kind = None
         self._knn_search_params = None
+
+    def _count_device_degrees(self):
+        """Count undirected edge endpoints without CuPy's large bincount kernel."""
+        if self.edges.dtype not in (np.dtype(np.int32), np.dtype(np.int64)):
+            raise TypeError("degree counting requires int32 or int64 edges")
+        if not self.edges.flags.c_contiguous:
+            raise ValueError("degree counting requires contiguous edges")
+
+        # CuPy 14.1's bincount kernel illegal-addresses on the 10M-node star
+        # stress case. Count into exact uint64 storage, then convert once to the
+        # FP32 degree representation used by the layout. This also avoids the
+        # saturation that repeated FP32 atomic increments would cause above
+        # 2**24 at a high-degree hub.
+        counts = cp.zeros(self.n, dtype=cp.uint64)
+        invalid_endpoint = cp.zeros(1, dtype=cp.uint32)
+        device_id = cp.cuda.Device().id
+        module = self._spring_modules.get(device_id)
+        if module is None:
+            module = cp.RawModule(
+                code=_SPRING_KERNEL_SOURCE,
+                options=('--std=c++11',),
+            )
+            self._spring_modules[device_id] = module
+        suffix = "i32" if self.edges.dtype == np.dtype(np.int32) else "i64"
+        kernel = module.get_function(f"degree_counts_{suffix}")
+        threads = 256
+        blocks = min((self.n_edges + threads - 1) // threads, 65_535)
+        kernel(
+            (blocks,),
+            (threads,),
+            (
+                self.edges,
+                counts,
+                invalid_endpoint,
+                np.int64(self.n_edges),
+                np.int64(self.n),
+            ),
+        )
+        if int(invalid_endpoint.item()):
+            raise ValueError("edge endpoint is outside the graph")
+        return counts.astype(cp.float32, copy=False)
 
     def _validate_adjacency(self, adjacency):
         """

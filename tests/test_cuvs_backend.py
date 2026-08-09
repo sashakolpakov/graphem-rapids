@@ -118,6 +118,70 @@ class TestCuVSBackend:
         assert embedder.n_edges == 3
         assert embedder.positions.shape == (4, 2)
 
+    @pytest.mark.slow
+    def test_degree_kernel_handles_ten_million_vertex_star(self):
+        vertex_count = 10_000_000
+        edge_count = vertex_count - 1
+        edges = cp.empty((edge_count, 2), dtype=cp.int32)
+        make_star = cp.RawKernel(
+            r"""
+            extern "C" __global__ void make_star(
+                int* output, const long long n_edges)
+            {
+                const long long edge_id =
+                    static_cast<long long>(blockDim.x) * blockIdx.x + threadIdx.x;
+                if (edge_id >= n_edges) return;
+                output[2 * edge_id] = 0;
+                output[2 * edge_id + 1] = static_cast<int>(edge_id + 1);
+            }
+            """,
+            "make_star",
+            options=("--std=c++11",),
+        )
+        threads = 256
+        make_star(
+            ((edge_count + threads - 1) // threads,),
+            (threads,),
+            (edges, np.int64(edge_count)),
+        )
+
+        embedder = object.__new__(GraphEmbedderCuVS)
+        embedder.n = vertex_count
+        embedder.n_edges = edge_count
+        embedder.edges = edges
+        degrees = embedder._count_device_degrees()
+
+        assert degrees.dtype == cp.float32
+        assert degrees.shape == (vertex_count,)
+        assert float(degrees[0].item()) == float(edge_count)
+        assert float(degrees[-1].item()) == 1.0
+        assert float(cp.sum(degrees).item()) == float(2 * edge_count)
+
+    @pytest.mark.parametrize("edge_dtype", [np.int32, np.int64])
+    def test_degree_kernel_preserves_endpoint_counts(self, edge_dtype):
+        embedder = object.__new__(GraphEmbedderCuVS)
+        embedder.n = 5
+        embedder.edges = cp.asarray(
+            [[0, 1], [0, 2], [0, 3], [3, 4]], dtype=edge_dtype
+        )
+        embedder.n_edges = int(embedder.edges.shape[0])
+
+        degrees = embedder._count_device_degrees()
+
+        assert cp.array_equal(
+            degrees,
+            cp.asarray([3.0, 1.0, 1.0, 2.0, 1.0], dtype=cp.float32),
+        )
+
+    def test_degree_kernel_rejects_out_of_range_endpoint(self):
+        embedder = object.__new__(GraphEmbedderCuVS)
+        embedder.n = 3
+        embedder.edges = cp.asarray([[0, 3]], dtype=cp.int32)
+        embedder.n_edges = 1
+
+        with pytest.raises(ValueError, match="outside the graph"):
+            embedder._count_device_degrees()
+
     def test_device_edge_canonicalization_uses_stacked_lexsort_keys(self):
         edges = cp.asarray([[2, 0], [1, 0], [0, 2], [1, 1]], dtype=cp.int32)
         embedder = GraphEmbedderCuVS(
