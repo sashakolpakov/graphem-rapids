@@ -1391,6 +1391,12 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
 
     def topk_nodes(self, k):
         """Return top radial node ids while transferring only ``k`` integers."""
+        if (
+            isinstance(k, (bool, np.bool_))
+            or not isinstance(k, numbers.Integral)
+        ):
+            raise ValueError("k must be an integer")
+        k = int(k)
         if not 0 <= k <= self.n_active_vertices:
             raise ValueError(
                 "k must be between zero and the number of non-isolated vertices"
@@ -1410,6 +1416,12 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
         highest radial nodes are geometrically redundant. Work is O(kCd), where C
         is a bounded candidate pool, and remains entirely on the GPU.
         """
+        if (
+            isinstance(k, (bool, np.bool_))
+            or not isinstance(k, numbers.Integral)
+        ):
+            raise ValueError("k must be an integer")
+        k = int(k)
         if not 0 <= k <= self.n_active_vertices:
             raise ValueError(
                 "k must be between zero and the number of non-isolated vertices"
@@ -1422,6 +1434,11 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
             candidate_pool_size = min(
                 self.n_active_vertices, max(10_000, 200 * k)
             )
+        if (
+            isinstance(candidate_pool_size, (bool, np.bool_))
+            or not isinstance(candidate_pool_size, numbers.Integral)
+        ):
+            raise ValueError("candidate_pool_size must be an integer or None")
         candidate_pool_size = min(
             self.n_active_vertices, int(candidate_pool_size)
         )

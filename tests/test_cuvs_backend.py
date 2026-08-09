@@ -35,6 +35,24 @@ def test_cuvs_boolean_options_reject_coercion(parameter, value):
         GraphEmbedderCuVS(**{parameter: value})
 
 
+@pytest.mark.parametrize("value", [1.5, True, "1"])
+def test_cuvs_direct_topk_requires_integral_nonboolean_k(value):
+    embedder = object.__new__(GraphEmbedderCuVS)
+    embedder.n_active_vertices = 3
+    with pytest.raises(ValueError, match="k must be an integer"):
+        embedder.topk_nodes(value)
+    with pytest.raises(ValueError, match="k must be an integer"):
+        embedder.diverse_topk_nodes(value)
+
+
+@pytest.mark.parametrize("value", [1.5, True, "2"])
+def test_cuvs_direct_diverse_topk_validates_candidate_pool(value):
+    embedder = object.__new__(GraphEmbedderCuVS)
+    embedder.n_active_vertices = 3
+    with pytest.raises(ValueError, match="candidate_pool_size"):
+        embedder.diverse_topk_nodes(1, candidate_pool_size=value)
+
+
 @pytest.mark.skipif(not CUVS_AVAILABLE, reason="cuVS not available")
 class TestCuVSBackend:
     """Test cuVS backend functionality."""
