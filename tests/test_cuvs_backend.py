@@ -1,12 +1,13 @@
 """Unit tests for cuVS backend."""
 
-# pylint: disable=missing-function-docstring,too-many-public-methods
+# pylint: disable=missing-function-docstring,too-many-public-methods,ungrouped-imports
 
 from types import SimpleNamespace
 
 import pytest
 import numpy as np
 from graphem_rapids.backends.embedder_cuvs import GraphEmbedderCuVS
+from graphem_rapids.generators import generate_er, generate_random_regular
 
 try:
     import cupy as cp
@@ -15,8 +16,6 @@ try:
     CUVS_AVAILABLE = True
 except ImportError:
     CUVS_AVAILABLE = False
-
-from graphem_rapids.generators import generate_er, generate_random_regular
 
 
 @pytest.mark.parametrize(
@@ -118,6 +117,19 @@ class TestCuVSBackend:
         assert embedder.adjacency is None
         assert embedder.n_edges == 3
         assert embedder.positions.shape == (4, 2)
+
+    def test_device_edge_canonicalization_uses_stacked_lexsort_keys(self):
+        edges = cp.asarray([[2, 0], [1, 0], [0, 2], [1, 1]], dtype=cp.int32)
+        embedder = GraphEmbedderCuVS(
+            edges=edges,
+            n_vertices=3,
+            initialization="randomized",
+            spectral_iterations=2,
+            k_inter=0,
+            verbose=False,
+        )
+        expected = cp.asarray([[0, 1], [0, 2]], dtype=cp.int32)
+        assert cp.array_equal(embedder.edges, expected)
 
     def test_isolates_are_zero_and_never_selected(self):
         edges = cp.asarray([[0, 1], [1, 2], [2, 3]], dtype=cp.int32)

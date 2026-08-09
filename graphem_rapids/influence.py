@@ -751,8 +751,8 @@ def _prepare_csr_indices(cp, adjacency):
     )
     dtype = cp.int32 if use_int32 else cp.int64
     return (
-        cp.ascontiguousarray(adjacency.indptr, dtype=dtype),
-        cp.ascontiguousarray(adjacency.indices, dtype=dtype),
+        cp.ascontiguousarray(cp.asarray(adjacency.indptr, dtype=dtype)),
+        cp.ascontiguousarray(cp.asarray(adjacency.indices, dtype=dtype)),
         "i32" if use_int32 else "i64",
     )
 

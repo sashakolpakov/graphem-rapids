@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Canonicalize and validate CPU/GPU CSR inputs before cascade evaluation; unsafe
   CSC/BSR interpretation, explicit zeros, duplicates, and malformed indices no
   longer reach the CUDA kernel.
+- Load cuVS before CuPy/PyTorch CUDA libraries, use CuPy 14's stacked lexsort
+  key contract, and explicitly transfer host CSR buffers before making them
+  contiguous. These fixes were exercised on the pinned RAPIDS 26.06 H100 stack.
 
 ### Added
 

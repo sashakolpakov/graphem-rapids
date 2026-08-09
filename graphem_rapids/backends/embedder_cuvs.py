@@ -20,8 +20,8 @@ from tqdm import tqdm
 
 # RAPIDS imports
 try:
-    import cupy as cp
     from cuvs.neighbors import brute_force, ivf_flat, ivf_pq
+    import cupy as cp
     CUVS_AVAILABLE = True
 except ImportError:
     CUVS_AVAILABLE = False
@@ -385,6 +385,8 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
             adjacency = self._validate_adjacency(adjacency)
             self.adjacency = adjacency
             self.n = adjacency.shape[0]
+            if n_components > self.n:
+                raise ValueError("n_components cannot exceed the number of vertices")
             upper = sp.triu(adjacency, k=1, format='coo')
             host_edges = np.column_stack((upper.row, upper.col))
             edge_dtype = cp.int32 if self.n < np.iinfo(np.int32).max else cp.int64
@@ -408,6 +410,8 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
             if n_vertices <= 0:
                 raise ValueError("n_vertices must be positive")
             self.n = int(n_vertices)
+            if n_components > self.n:
+                raise ValueError("n_components cannot exceed the number of vertices")
             if device_edges.dtype.kind not in "iu":
                 raise TypeError("edge endpoints must have an integer dtype")
             edge_dtype = cp.int32 if self.n < np.iinfo(np.int32).max else cp.int64
@@ -419,14 +423,12 @@ class GraphEmbedderCuVS:  # pylint: disable=too-many-instance-attributes
                 source = cp.minimum(device_edges[:, 0], device_edges[:, 1])
                 target = cp.maximum(device_edges[:, 0], device_edges[:, 1])
                 device_edges = cp.column_stack((source, target))
-                order = cp.lexsort((device_edges[:, 1], device_edges[:, 0]))
+                keys = cp.stack((device_edges[:, 1], device_edges[:, 0]), axis=0)
+                order = cp.lexsort(keys)
                 device_edges = device_edges[order]
                 unique = cp.ones(device_edges.shape[0], dtype=cp.bool_)
                 unique[1:] = cp.any(device_edges[1:] != device_edges[:-1], axis=1)
                 device_edges = device_edges[unique]
-
-        if n_components > self.n:
-            raise ValueError("n_components cannot exceed the number of vertices")
 
         # Store parameters
         self.n_components = n_components
