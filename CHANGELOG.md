@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Move unused profiling tools out of the package's mandatory runtime
+  dependencies and into the explicit ``profiling`` extra.
 - Keep higher-dimensional ``create_graphem`` calls backend-independent by
   supplying ``k_inter=0`` when the factory selects cuVS and the caller omitted
   the 2D-only crossing-force option.
