@@ -61,11 +61,13 @@ Contents
 Reproducibility suite
 ---------------------
 
-The pinned H100 capacity, stress, ANN-recall, and external influence-baseline
+The pinned GPU capacity, stress, ANN-recall, and external influence-baseline
 workflow is maintained separately in
 `fast-geometric-repro <https://github.com/sashakolpakov/fast-geometric-repro>`_.
 Keeping that evidence harness outside the package prevents benchmark-only
-dependencies and archived artifacts from becoming part of the library.
+dependencies and archived artifacts from becoming part of the library. The
+suite supports compatible CUDA GPUs for diagnostics and scopes H100 to its
+production-evidence profile; the package itself is not H100-specific.
 
 Citation
 --------

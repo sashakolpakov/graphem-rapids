@@ -28,8 +28,8 @@
 High-performance [GraphEm](https://github.com/sashakolpakov/graphem)
 implementation using PyTorch and RAPIDS cuVS. Force-directed layouts with
 geometric intersection detection produce radial node-ranking scores for
-influence experiments; the H100 evidence workflow compares those scores against
-cheaper centrality and influence-maximization baselines.
+influence experiments; a separate GPU-generic evidence workflow compares those
+scores against cheaper centrality and influence-maximization baselines.
 
 ## Features
 
@@ -49,10 +49,12 @@ pip install graphem-rapids[rapids]      # + RAPIDS cuVS
 pip install graphem-rapids[all]         # Everything
 ```
 
-The version-pinned H100 capacity, stress, ANN-recall, and influence evidence
+The version-pinned GPU capacity, stress, ANN-recall, and influence evidence
 workflow lives in the separate
 [`fast-geometric-repro`](https://github.com/sashakolpakov/fast-geometric-repro)
-repository. This repository remains the installable library and its unit tests.
+repository. It supports diagnostic runs on compatible CUDA GPUs and has a
+separate H100 production-evidence profile. This repository remains the
+hardware-generic installable library and its unit tests.
 
 > **Migration note for 0.3:** `graphem_seed_selection(embedder, k)` no longer
 > performs 20 hidden layout iterations. Run the layout first, as in the example
@@ -274,8 +276,9 @@ python benchmarks/diagnose_force_modes.py        # Paper vs legacy spring sign
 
 Use
 [`fast-geometric-repro`](https://github.com/sashakolpakov/fast-geometric-repro)
-for the fail-closed H100 runbook, reviewer/engineering triage, external IMM
-adapter, environment lock, and evidence schemas.
+for the fail-closed GPU runbook, reviewer/engineering triage, external IMM
+adapter, environment lock, and evidence schemas. H100 is one explicitly scoped
+production benchmark profile, not a package requirement.
 
 ## Contributing
 

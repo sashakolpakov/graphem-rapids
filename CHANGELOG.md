@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   degree-discount and geometric-diversity seed selection.
 - Stable diagnostics, explicit ANN controls, allocator-aware cascade planning,
   and GPU-resident input contracts consumed by the separately versioned
-  ``fast-geometric-repro`` H100 evidence suite.
+  hardware-generic ``fast-geometric-repro`` evidence suite. H100 remains an
+  explicitly scoped production benchmark profile rather than a package target.
 
 ### Changed
 
