@@ -13,7 +13,9 @@ def main():
         k_inter=1.0,
         n_neighbors=15,
         sample_size=2_048,
+        midpoint_query_batch_size=64,
         seed=0,
+        device="cuda",
     )
     embedder.run_layout(num_iterations=30)
     print(embedder.get_top_k(50))
@@ -21,4 +23,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

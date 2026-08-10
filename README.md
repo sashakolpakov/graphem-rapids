@@ -34,7 +34,8 @@ For every run, GraphEm:
 4. draws one deterministic uniform query-edge subset without replacement using
    the recorded PCG64/Floyd recipe;
 5. recomputes every edge midpoint on every iteration and performs exact cuVS
-   brute-force search against the complete midpoint array;
+   brute-force search against the complete midpoint array, submitting at most
+   64 queries per call;
 6. removes self-neighbours by global edge identity and completes cutoff ties in
    increasing global edge-ID order;
 7. applies restoring spring forces and strict crossing forces in the first two
@@ -81,6 +82,7 @@ embedder = gr.GraphEmbedder(
     k_inter=1.0,
     n_neighbors=15,
     sample_size=2_048,
+    midpoint_query_batch_size=64,
     seed=0,
     device="cuda",
 )
@@ -101,6 +103,7 @@ embedder = gr.GraphEmbedder(
     n_components=3,
     n_neighbors=15,
     sample_size=2_048,
+    midpoint_query_batch_size=64,
     device="cuda",
 )
 ```
@@ -108,7 +111,17 @@ embedder = gr.GraphEmbedder(
 Exactly one of `adjacency` and `edges` is accepted. An edge list must use
 integer vertex IDs in `[0, n_vertices)`. For either input form,
 `sample_size <= n_edges`, `n_neighbors < n_edges`, and
-`n_vertices >= 3 * (n_components + 1)` must hold.
+`n_vertices >= 3 * (n_components + 1)` must hold. The exact midpoint search
+accepts `midpoint_query_batch_size` in `[1, 64]`; 64 is both the default and a
+hard ceiling, so an edge-heavy run cannot restore the all-queries-at-once
+allocation by configuration.
+
+Midpoint diagnostics record the configured and effective batch sizes, the hard
+policy bound, every submitted batch-size count, the number of cuVS search
+calls, call-width and resolved-query-width histograms, and the highest
+device-wide allocation footprint observed at declared `cudaMemGetInfo`
+checkpoints. The checkpoint receipt is an in-process diagnostic; qualification
+artifacts still record an external GPU-memory high-water mark.
 
 ## Reproduction policy
 
@@ -130,6 +143,7 @@ method is not replaced, omitted, or reported with another method's values.
 
 ## Issue lineage
 
+- [Bounded cuVS query-batching issue #8](https://github.com/sashakolpakov/graphem/issues/8)
 - [Torch/CUDA spectral initializer issue #9](https://github.com/sashakolpakov/graphem/issues/9)
 - [Global midpoint-ID issue #6](https://github.com/sashakolpakov/graphem-rapids/issues/6)
 - [Original GraphEm midpoint-ID issue #7](https://github.com/sashakolpakov/graphem/issues/7)

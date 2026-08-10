@@ -42,6 +42,7 @@ Adjacency input
        k_inter=1.0,
        n_neighbors=15,
        sample_size=2_048,
+       midpoint_query_batch_size=64,
        seed=0,
        device="cuda",
    )
@@ -66,6 +67,7 @@ the total vertex count:
        n_components=3,
        n_neighbors=15,
        sample_size=2_048,
+       midpoint_query_batch_size=64,
        device="cuda",
    )
 
@@ -73,7 +75,9 @@ Edges must contain integer vertex IDs in ``[0, n_vertices)`` and must not
 contain loops or duplicate undirected pairs.  For both input forms,
 ``sample_size`` cannot exceed the edge count and ``n_neighbors`` must be
 strictly smaller than the edge count.  Spectral initialization additionally
-requires ``n_vertices >= 3 * (n_components + 1)``.
+requires ``n_vertices >= 3 * (n_components + 1)``.  Exact midpoint queries are
+submitted in batches of at most 64.  ``midpoint_query_batch_size`` can select a
+smaller positive batch but cannot exceed that canonical bound.
 
 Failure and diagnostics
 -----------------------
@@ -82,4 +86,9 @@ Construction fails on a missing GPU dependency, invalid graph, unavailable
 requested CUDA device, nonconverged spectral solve, or failed numerical gate.
 ``get_diagnostics()`` records the requested and selected spectral devices,
 solver protocol, eigenvalues, residual, query-edge hashes, midpoint-search
-receipts, iteration count, and primitive timings.
+receipts, iteration count, and primitive timings.  The midpoint receipt includes
+the configured/effective batch size, hard policy bound, search-call count,
+submitted batch-size histogram, call-width and resolved-query-width
+histograms, and the highest device-wide bytes observed at declared CUDA memory
+checkpoints.  Benchmark qualification also records an external GPU-memory
+high-water mark.

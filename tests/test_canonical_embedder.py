@@ -53,6 +53,271 @@ def test_missing_gpu_stack_is_an_explicit_error(monkeypatch):
         GraphEmbedder(np.eye(4, dtype=np.float32))
 
 
+def test_midpoint_query_batch_size_has_a_hard_canonical_bound():
+    parameter = inspect.signature(GraphEmbedder).parameters[
+        "midpoint_query_batch_size"
+    ]
+    assert parameter.default == implementation.MIDPOINT_QUERY_BATCH_SIZE_BOUND
+    assert implementation._bounded_midpoint_query_batch_size(np.int64(1)) == 1
+    assert (
+        implementation._bounded_midpoint_query_batch_size(
+            implementation.MIDPOINT_QUERY_BATCH_SIZE_BOUND
+        )
+        == implementation.MIDPOINT_QUERY_BATCH_SIZE_BOUND
+    )
+    for invalid in (True, 0, -1, 1.5, "4"):
+        with pytest.raises((TypeError, ValueError)):
+            implementation._bounded_midpoint_query_batch_size(invalid)
+    with pytest.raises(ValueError, match="canonical bound"):
+        implementation._bounded_midpoint_query_batch_size(
+            implementation.MIDPOINT_QUERY_BATCH_SIZE_BOUND + 1
+        )
+
+
+class _ExactCpuBruteForce:
+    """GPU-free exact-search oracle with adversarial cutoff-tie ordering."""
+
+    calls = []
+
+    @staticmethod
+    def build(midpoints, metric):
+        assert metric == "sqeuclidean"
+        return np.asarray(midpoints, dtype=np.float32)
+
+    @classmethod
+    def search(cls, index, queries, width):
+        queries = np.asarray(queries, dtype=np.float32)
+        references = np.asarray(index, dtype=np.float32)
+        deltas = queries[:, None, :] - references[None, :, :]
+        squared_distances = np.sum(deltas * deltas, axis=2, dtype=np.float32)
+        raw_distances = squared_distances.copy()
+        raw_distances[squared_distances == 0] = np.float32(-1.0e-7)
+        global_edge_ids = np.arange(references.shape[0], dtype=np.int64)
+        neighbor_rows = []
+        distance_rows = []
+        for row in raw_distances:
+            # cuVS promises distance ordering, not an edge-ID order at ties.
+            # Deliberately reverse tied IDs so GraphEm must canonicalize them.
+            order = np.lexsort((-global_edge_ids, row))[:width]
+            neighbor_rows.append(global_edge_ids[order])
+            distance_rows.append(row[order])
+        cls.calls.append((int(queries.shape[0]), int(width)))
+        return (
+            np.asarray(distance_rows, dtype=np.float32),
+            np.asarray(neighbor_rows, dtype=np.int64),
+        )
+
+
+def _run_cpu_midpoint_case(midpoints, sampled_edge_ids, n_neighbors, batch_size):
+    midpoints = np.asarray(midpoints, dtype=np.float32)
+    n_edges = int(midpoints.shape[0])
+    embedder = object.__new__(GraphEmbedder)
+    embedder.positions = np.repeat(midpoints, 2, axis=0)
+    embedder.edges = np.arange(2 * n_edges, dtype=np.int64).reshape(
+        n_edges, 2
+    )
+    embedder.sampled_edge_ids = np.asarray(sampled_edge_ids, dtype=np.int64)
+    embedder.sample_size = int(embedder.sampled_edge_ids.size)
+    embedder.n_edges = n_edges
+    embedder.n_neighbors = n_neighbors
+    embedder._midpoint_query_batch_size = batch_size
+    embedder._midpoint_width_histogram = {}
+    embedder._midpoint_negative_distance_repairs = 0
+    embedder._midpoint_search_call_count = 0
+    embedder._midpoint_search_call_width_histogram = {}
+    embedder._midpoint_query_batch_histogram = {}
+    embedder._midpoint_search_peak_device_bytes = None
+    _ExactCpuBruteForce.calls = []
+    result = embedder._midpoint_neighbors()
+    return result, embedder, list(_ExactCpuBruteForce.calls)
+
+
+def _run_cpu_midpoint_batch_fixture(batch_size):
+    midpoints = np.array(
+        [
+            [1000.0, 1000.0],
+            [1000.0, 1000.0],
+            [1000.0, 1000.0],
+            [1000.0, 1000.0],
+            [1000.0, 1000.0],
+            [1001.0, 1000.0],
+            [1001.0, 1000.0],
+            [1002.0, 1000.0],
+            [1003.0, 1000.0],
+            [1004.0, 1000.0],
+        ],
+        dtype=np.float32,
+    )
+    return _run_cpu_midpoint_case(
+        midpoints,
+        np.array([4, 5, 8, 9, 1], dtype=np.int64),
+        2,
+        batch_size,
+    )
+
+
+def test_query_batching_is_exact_across_ties_expansion_and_negative_repair(
+    monkeypatch,
+):
+    monkeypatch.setattr(implementation, "cp", np)
+    monkeypatch.setattr(implementation, "brute_force", _ExactCpuBruteForce)
+
+    unbatched, unbatched_embedder, unbatched_calls = (
+        _run_cpu_midpoint_batch_fixture(5)
+    )
+    batched_two, batched_two_embedder, batched_two_calls = (
+        _run_cpu_midpoint_batch_fixture(2)
+    )
+    batched_one, batched_one_embedder, batched_one_calls = (
+        _run_cpu_midpoint_batch_fixture(1)
+    )
+
+    expected = np.array(
+        [[0, 1], [6, 0], [7, 9], [8, 7], [0, 2]], dtype=np.int64
+    )
+    np.testing.assert_array_equal(unbatched, expected)
+    np.testing.assert_array_equal(batched_two, unbatched)
+    np.testing.assert_array_equal(batched_one, unbatched)
+    for embedder in (
+        unbatched_embedder,
+        batched_two_embedder,
+        batched_one_embedder,
+    ):
+        assert embedder._midpoint_width_histogram == {4: 2, 8: 2, 10: 1}
+        assert embedder._midpoint_negative_distance_repairs == 26
+
+    assert unbatched_calls == [(5, 4), (3, 8), (1, 10)]
+    assert batched_two_calls == [
+        (2, 4),
+        (2, 4),
+        (1, 4),
+        (2, 8),
+        (1, 8),
+        (1, 10),
+    ]
+    assert batched_one_calls == [(1, 4)] * 5 + [(1, 8)] * 3 + [(1, 10)]
+    assert max(size for size, _width in batched_two_calls) == 2
+    assert batched_two_embedder._midpoint_search_call_count == 6
+    assert batched_two_embedder._midpoint_search_call_width_histogram == {
+        4: 3,
+        8: 2,
+        10: 1,
+    }
+    assert batched_two_embedder._midpoint_query_batch_histogram == {1: 3, 2: 3}
+
+
+@pytest.mark.parametrize("seed", [0, 1, 7, 19])
+def test_randomized_query_batches_match_an_independent_exact_oracle(
+    monkeypatch, seed
+):
+    monkeypatch.setattr(implementation, "cp", np)
+    monkeypatch.setattr(implementation, "brute_force", _ExactCpuBruteForce)
+    generator = np.random.default_rng(seed)
+    midpoints = np.float32(1000.0) + generator.integers(
+        -4, 5, size=(37, 3)
+    ).astype(np.float32)
+    sampled_edge_ids = generator.choice(37, size=17, replace=False)
+    global_edge_ids = np.arange(37, dtype=np.int64)
+    expected_rows = []
+    for query_edge_id in sampled_edge_ids:
+        deltas = midpoints - midpoints[query_edge_id]
+        distances = np.sum(deltas * deltas, axis=1, dtype=np.float32)
+        order = np.lexsort((global_edge_ids, distances))
+        expected_rows.append(order[order != query_edge_id][:5])
+    expected = np.asarray(expected_rows, dtype=np.int64)
+
+    reference, reference_embedder, _reference_calls = _run_cpu_midpoint_case(
+        midpoints, sampled_edge_ids, 5, 17
+    )
+    np.testing.assert_array_equal(reference, expected)
+    for batch_size in (1, 3, 7):
+        observed, embedder, calls = _run_cpu_midpoint_case(
+            midpoints, sampled_edge_ids, 5, batch_size
+        )
+        np.testing.assert_array_equal(observed, reference)
+        assert max(size for size, _width in calls) <= batch_size
+        assert (
+            embedder._midpoint_width_histogram
+            == reference_embedder._midpoint_width_histogram
+        )
+        assert (
+            embedder._midpoint_negative_distance_repairs
+            == reference_embedder._midpoint_negative_distance_repairs
+        )
+
+
+def test_midpoint_search_revalidates_the_batch_bound_before_submission(
+    monkeypatch,
+):
+    monkeypatch.setattr(implementation, "cp", np)
+    monkeypatch.setattr(implementation, "brute_force", _ExactCpuBruteForce)
+    with pytest.raises(ValueError, match="canonical bound"):
+        _run_cpu_midpoint_batch_fixture(
+            implementation.MIDPOINT_QUERY_BATCH_SIZE_BOUND + 1
+        )
+    assert not _ExactCpuBruteForce.calls
+
+
+def test_query_batch_diagnostics_receipt_the_executed_policy(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    monkeypatch.setattr(implementation, "brute_force", _ExactCpuBruteForce)
+    monkeypatch.setattr(np, "asnumpy", np.asarray, raising=False)
+    _result, embedder, _calls = _run_cpu_midpoint_batch_fixture(2)
+    embedder.n = 20
+    embedder.degrees = np.ones(embedder.n, dtype=np.float32)
+    embedder.n_components = 2
+    embedder.L_min = 1.0
+    embedder.k_attr = 0.2
+    embedder.k_inter = 0.5
+    embedder.seed = 0
+    embedder._spectral_device_requested = "cuda"
+    embedder._iteration = 1
+    embedder.timings = {}
+    embedder._spectral_diagnostics = {"normalized_laplacian": "fixture"}
+    embedder._spectral_eigenvalues = []
+    embedder._spectral_max_residual_norm_ratio = 0.0
+
+    diagnostics = embedder.get_diagnostics()
+
+    assert diagnostics["configuration"]["midpoint_query_batch_size"] == 2
+    assert diagnostics["midpoint_query_batch_policy"].endswith("at-most-64-v1")
+    assert diagnostics["midpoint_query_batch_size_bound"] == 64
+    assert diagnostics["midpoint_query_batch_size_effective"] == 2
+    assert diagnostics["midpoint_search_call_count"] == 6
+    assert diagnostics["midpoint_search_call_width_histogram"] == {
+        "4": 3,
+        "8": 2,
+        "10": 1,
+    }
+    assert diagnostics["midpoint_search_query_batch_histogram"] == {
+        "1": 3,
+        "2": 3,
+    }
+    assert diagnostics["midpoint_search_width_histogram"] == {
+        "4": 2,
+        "8": 2,
+        "10": 1,
+    }
+    assert diagnostics["midpoint_search_peak_device_bytes"] is None
+    assert diagnostics["midpoint_search_peak_device_bytes_scope"].startswith(
+        "cuda-memgetinfo"
+    )
+
+
+def test_midpoint_memory_receipt_retains_the_highest_checkpoint(monkeypatch):
+    observations = iter((100, 90, 120, 110))
+    monkeypatch.setattr(
+        GraphEmbedder,
+        "_current_device_memory_used_bytes",
+        staticmethod(lambda: next(observations)),
+    )
+    embedder = object.__new__(GraphEmbedder)
+    embedder._midpoint_search_peak_device_bytes = None
+    for _ in range(4):
+        embedder._observe_midpoint_search_device_memory()
+    assert embedder._midpoint_search_peak_device_bytes == 120
+
+
 def test_identity_based_self_removal_handles_ties(monkeypatch):
     monkeypatch.setattr(implementation, "cp", np)
     raw = np.array([[4, 0, 2, 9], [8, 3, 5, 1]], dtype=np.int64)

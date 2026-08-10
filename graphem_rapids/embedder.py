@@ -55,6 +55,9 @@ SPECTRAL_CLUSTER_BOUND = np.float64(1.0e-8)
 SPECTRAL_MINIMUM_BLOCK_WIDTH = 16
 SPECTRAL_START_ALGORITHM = "analytic-sine-cosine-qr-float64-v1"
 TORCH_SPECTRAL_BACKEND = "torch-lobpcg-shifted-normalized-laplacian-v2"
+MIDPOINT_QUERY_BATCH_SIZE_BOUND = 64
+MIDPOINT_QUERY_BATCH_POLICY = "fixed-explicit-at-most-64-v1"
+MIDPOINT_MEMORY_OBSERVATION = "cuda-memgetinfo-search-checkpoints-v1"
 
 
 _DETERMINISTIC_FORCE_KERNELS = r"""
@@ -202,6 +205,16 @@ def _nonnegative_integer(name: str, value: object) -> int:
     return parsed
 
 
+def _bounded_midpoint_query_batch_size(value: object) -> int:
+    parsed = _positive_integer("midpoint_query_batch_size", value)
+    if parsed > MIDPOINT_QUERY_BATCH_SIZE_BOUND:
+        raise ValueError(
+            "midpoint_query_batch_size cannot exceed the canonical "
+            f"bound of {MIDPOINT_QUERY_BATCH_SIZE_BOUND}"
+        )
+    return parsed
+
+
 def _positive_finite(name: str, value: object) -> float:
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
         raise TypeError(f"{name} must be a real number")
@@ -237,6 +250,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         logger_instance: Optional[logging.Logger] = None,
         *,
         device="cuda",
+        midpoint_query_batch_size: int = MIDPOINT_QUERY_BATCH_SIZE_BOUND,
         edges=None,
         n_vertices: Optional[int] = None,
     ):
@@ -252,6 +266,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         self.k_inter = _positive_finite("k_inter", k_inter)
         self.n_neighbors = _positive_integer("n_neighbors", n_neighbors)
         requested_sample_size = _positive_integer("sample_size", sample_size)
+        requested_query_batch_size = _bounded_midpoint_query_batch_size(
+            midpoint_query_batch_size
+        )
+        self._midpoint_query_batch_size = requested_query_batch_size
         if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, numbers.Integral):
             raise TypeError("seed must be an integer")
         if not 0 <= int(seed) <= int(np.iinfo(np.uint32).max):
@@ -294,6 +312,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         self._neighbor_ids = cp.ascontiguousarray(self._adjacency.indices)
         self._midpoint_width_histogram = {}
         self._midpoint_negative_distance_repairs = 0
+        self._midpoint_search_call_count = 0
+        self._midpoint_search_call_width_histogram = {}
+        self._midpoint_query_batch_histogram = {}
+        self._midpoint_search_peak_device_bytes = None
 
         self.timings = {
             "initialization_seconds": 0.0,
@@ -931,66 +953,154 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             raise RuntimeError("self neighbor survived identity-based removal")
         return compacted
 
+    @staticmethod
+    def _current_device_memory_used_bytes():
+        """Return device-wide used bytes at one declared CUDA checkpoint."""
+        cuda = getattr(cp, "cuda", None)
+        runtime = getattr(cuda, "runtime", None)
+        if runtime is None:  # GPU-free NumPy contract tests.
+            return None
+        free_bytes, total_bytes = runtime.memGetInfo()
+        free_bytes = int(free_bytes)
+        total_bytes = int(total_bytes)
+        if free_bytes < 0 or total_bytes <= 0 or free_bytes > total_bytes:
+            raise RuntimeError("CUDA returned an invalid device-memory snapshot")
+        return total_bytes - free_bytes
+
+    def _observe_midpoint_search_device_memory(self):
+        used_bytes = self._current_device_memory_used_bytes()
+        if used_bytes is None:
+            return
+        previous = getattr(self, "_midpoint_search_peak_device_bytes", None)
+        if previous is None or used_bytes > previous:
+            self._midpoint_search_peak_device_bytes = used_bytes
+
     def _midpoint_neighbors(self):
         midpoints = cp.ascontiguousarray(
             np.float32(0.5)
             * (self.positions[self.edges[:, 0]] + self.positions[self.edges[:, 1]]),
             dtype=cp.float32,
         )
+        self._observe_midpoint_search_device_memory()
         queries = cp.ascontiguousarray(midpoints[self.sampled_edge_ids])
+        self._observe_midpoint_search_device_memory()
         index = brute_force.build(midpoints, metric="sqeuclidean")
+        self._observe_midpoint_search_device_memory()
         search_width = min(self.n_edges, self.n_neighbors + 2)
         unresolved = cp.arange(self.sample_size, dtype=cp.int64)
         resolved = cp.empty(
             (self.sample_size, self.n_neighbors), dtype=cp.int64
         )
+        query_batch_size = min(
+            self.sample_size,
+            _bounded_midpoint_query_batch_size(
+                getattr(
+                    self,
+                    "_midpoint_query_batch_size",
+                    MIDPOINT_QUERY_BATCH_SIZE_BOUND,
+                )
+            ),
+        )
         while int(unresolved.size):
-            query_subset = queries[unresolved]
-            result = brute_force.search(index, query_subset, search_width)
-            distances, neighbors = self._search_result_arrays(result)
-            raw_search_boundary = distances[:, -1].copy()
-            expected_shape = (int(unresolved.size), search_width)
-            if neighbors.shape != expected_shape:
-                raise ValueError(
-                    f"cuVS returned neighbor shape {neighbors.shape}, "
-                    f"expected {expected_shape}"
+            next_unresolved = []
+            for batch_start in range(0, int(unresolved.size), query_batch_size):
+                batch_rows = unresolved[
+                    batch_start : batch_start + query_batch_size
+                ]
+                query_subset = queries[batch_rows]
+                submitted_count = int(batch_rows.size)
+                self._midpoint_search_call_count = (
+                    getattr(self, "_midpoint_search_call_count", 0) + 1
                 )
-            if bool(cp.any(neighbors < 0).item()) or bool(
-                cp.any(neighbors >= self.n_edges).item()
-            ):
-                raise ValueError("cuVS returned an ID outside the global edge namespace")
-            distances, repair_count = self._repair_negative_squared_distances(
-                distances, neighbors, query_subset, midpoints
-            )
-            self._midpoint_negative_distance_repairs += repair_count
+                call_width_histogram = getattr(
+                    self, "_midpoint_search_call_width_histogram", {}
+                )
+                call_width_histogram[search_width] = (
+                    call_width_histogram.get(search_width, 0) + 1
+                )
+                self._midpoint_search_call_width_histogram = (
+                    call_width_histogram
+                )
+                batch_histogram = getattr(
+                    self, "_midpoint_query_batch_histogram", {}
+                )
+                batch_histogram[submitted_count] = (
+                    batch_histogram.get(submitted_count, 0) + 1
+                )
+                self._midpoint_query_batch_histogram = batch_histogram
+                self._observe_midpoint_search_device_memory()
+                result = brute_force.search(index, query_subset, search_width)
+                self._observe_midpoint_search_device_memory()
+                distances, neighbors = self._search_result_arrays(result)
+                raw_search_boundary = distances[:, -1].copy()
+                expected_shape = (submitted_count, search_width)
+                if neighbors.shape != expected_shape:
+                    raise ValueError(
+                        f"cuVS returned neighbor shape {neighbors.shape}, "
+                        f"expected {expected_shape}"
+                    )
+                if bool(cp.any(neighbors < 0).item()) or bool(
+                    cp.any(neighbors >= self.n_edges).item()
+                ):
+                    raise ValueError(
+                        "cuVS returned an ID outside the global edge namespace"
+                    )
+                distances, repair_count = self._repair_negative_squared_distances(
+                    distances, neighbors, query_subset, midpoints
+                )
+                self._midpoint_negative_distance_repairs += repair_count
+                self._observe_midpoint_search_device_memory()
 
-            query_edge_ids = self.sampled_edge_ids[unresolved]
-            ordered_neighbors, ordered_distances, usable_counts = (
-                self._lexicographic_nonself_candidates(
-                    neighbors, distances, query_edge_ids
+                query_edge_ids = self.sampled_edge_ids[batch_rows]
+                ordered_neighbors, ordered_distances, usable_counts = (
+                    self._lexicographic_nonself_candidates(
+                        neighbors, distances, query_edge_ids
+                    )
                 )
-            )
-            if bool(cp.any(usable_counts < self.n_neighbors).item()):
-                raise RuntimeError(
-                    "cuVS returned fewer than the required non-self neighbors"
+                if bool(cp.any(usable_counts < self.n_neighbors).item()):
+                    raise RuntimeError(
+                        "cuVS returned fewer than the required non-self neighbors"
+                    )
+                selected = ordered_neighbors[:, : self.n_neighbors]
+                cutoff = ordered_distances[:, self.n_neighbors - 1]
+                if search_width == self.n_edges:
+                    complete = cp.ones(batch_rows.shape, dtype=cp.bool_)
+                else:
+                    complete = raw_search_boundary > cutoff
+                completed_count = int(cp.sum(complete).item())
+                if completed_count:
+                    completed_rows = batch_rows[complete]
+                    resolved[completed_rows] = selected[complete].astype(
+                        cp.int64, copy=False
+                    )
+                    self._midpoint_width_histogram[search_width] = (
+                        self._midpoint_width_histogram.get(search_width, 0)
+                        + completed_count
+                    )
+                remaining_rows = batch_rows[~complete]
+                if int(remaining_rows.size):
+                    next_unresolved.append(remaining_rows)
+                del (
+                    batch_rows,
+                    query_subset,
+                    result,
+                    distances,
+                    neighbors,
+                    raw_search_boundary,
+                    query_edge_ids,
+                    ordered_neighbors,
+                    ordered_distances,
+                    usable_counts,
+                    selected,
+                    cutoff,
+                    complete,
+                    remaining_rows,
                 )
-            selected = ordered_neighbors[:, : self.n_neighbors]
-            cutoff = ordered_distances[:, self.n_neighbors - 1]
-            if search_width == self.n_edges:
-                complete = cp.ones(unresolved.shape, dtype=cp.bool_)
+
+            if next_unresolved:
+                unresolved = cp.concatenate(tuple(next_unresolved))
             else:
-                complete = raw_search_boundary > cutoff
-            completed_count = int(cp.sum(complete).item())
-            if completed_count:
-                completed_rows = unresolved[complete]
-                resolved[completed_rows] = selected[complete].astype(
-                    cp.int64, copy=False
-                )
-                self._midpoint_width_histogram[search_width] = (
-                    self._midpoint_width_histogram.get(search_width, 0)
-                    + completed_count
-                )
-            unresolved = unresolved[~complete]
+                unresolved = cp.empty(0, dtype=cp.int64)
             if int(unresolved.size):
                 if search_width == self.n_edges:
                     raise RuntimeError(
@@ -1270,6 +1380,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                 "sample_size": self.sample_size,
                 "seed": self.seed,
                 "device": self._spectral_device_requested,
+                "midpoint_query_batch_size": self._midpoint_query_batch_size,
             },
             "iterations": self._iteration,
             "timings": dict(self.timings),
@@ -1290,6 +1401,30 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             ),
             "midpoint_negative_distance_repair_count": (
                 self._midpoint_negative_distance_repairs
+            ),
+            "midpoint_query_batch_policy": MIDPOINT_QUERY_BATCH_POLICY,
+            "midpoint_query_batch_size_bound": MIDPOINT_QUERY_BATCH_SIZE_BOUND,
+            "midpoint_query_batch_size_effective": min(
+                self.sample_size, self._midpoint_query_batch_size
+            ),
+            "midpoint_search_call_count": self._midpoint_search_call_count,
+            "midpoint_search_call_width_histogram": {
+                str(width): count
+                for width, count in sorted(
+                    self._midpoint_search_call_width_histogram.items()
+                )
+            },
+            "midpoint_search_query_batch_histogram": {
+                str(size): count
+                for size, count in sorted(
+                    self._midpoint_query_batch_histogram.items()
+                )
+            },
+            "midpoint_search_peak_device_bytes": (
+                self._midpoint_search_peak_device_bytes
+            ),
+            "midpoint_search_peak_device_bytes_scope": (
+                MIDPOINT_MEMORY_OBSERVATION
             ),
             "midpoint_search_width_histogram": {
                 str(width): count
