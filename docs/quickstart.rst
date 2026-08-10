@@ -1,128 +1,23 @@
-Quick Start Guide
-=================
+Quick start
+===========
 
-Installation
-------------
+GraphEm requires CUDA 12, CuPy, cupyx, and cuVS.  It does not select a second
+implementation when a required component is unavailable.
 
-Basic Installation::
+.. code-block:: python
 
-    pip install graphem-rapids
+   import graphem_rapids as gr
 
-With CUDA support::
-
-    pip install graphem-rapids[cuda]
-
-With RAPIDS cuVS::
-
-    pip install graphem-rapids[rapids]
-
-All features::
-
-    pip install graphem-rapids[all]
-
-Basic Usage
------------
-
-Generate and Embed a Graph
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    import graphem_rapids as gr
-
-    # Generate graph (returns sparse adjacency matrix)
-    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
-
-    # Create embedder with automatic backend selection
-    embedder = gr.create_graphem(adjacency, n_components=3)
-
-    # Run force-directed layout
-    embedder.run_layout(num_iterations=50)
-
-    # Get positions (numpy array)
-    positions = embedder.get_positions()  # shape: (n_vertices, n_components)
-
-    # Visualize (2D or 3D)
-    embedder.display_layout()
-
-Backend Selection
------------------
-
-Automatic (Recommended)
-~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    embedder = gr.create_graphem(adjacency, n_components=3)
-
-When this automatic call selects cuVS for a non-2D layout, the factory supplies
-``k_inter=0`` unless ``k_inter`` was explicitly provided. Crossing forces remain
-2D-only.
-
-PyTorch Backend
-~~~~~~~~~~~~~~~
-
-Best for 1K-100K vertices::
-
-    embedder = gr.GraphEmbedderPyTorch(
-        adjacency, n_components=3, device='cuda',
-        L_min=1.0, k_attr=0.2, k_inter=0.5,
-        n_neighbors=10, batch_size=None
-    )
-
-RAPIDS cuVS Backend
-~~~~~~~~~~~~~~~~~~~
-
-Best for 100K+ vertices::
-
-    embedder = gr.GraphEmbedderCuVS(
-        adjacency, n_components=2,
-        index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
-        sample_size=None, batch_size=None
-    )
-
-Crossing forces are 2D-only. Use ``k_inter=0`` explicitly for a
-higher-dimensional spring-only layout.
-
-**Index Types:**
-  * ``brute_force``: exact search below 100K midpoint references
-  * ``ivf_flat``: automatic choice for larger midpoint references
-  * ``ivf_pq``: explicit opt-in, usually a poor fit for low-dimensional layouts
-
-Configuration
--------------
-
-Environment Variables
-~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    export GRAPHEM_BACKEND=pytorch        # Force specific backend
-    export GRAPHEM_PREFER_GPU=true        # Prefer GPU backends
-    export GRAPHEM_MEMORY_LIMIT=8         # Memory limit in GB
-    export GRAPHEM_VERBOSE=true           # Enable verbose logging
-
-Programmatic Configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    from graphem_rapids.utils.backend_selection import BackendConfig, get_optimal_backend
-
-    config = BackendConfig(
-        n_vertices=50000,
-        force_backend='cuvs',
-        memory_limit=16.0,
-        prefer_gpu=True
-    )
-    backend = get_optimal_backend(config)
-    embedder = gr.create_graphem(adjacency, backend=backend)
-
-Check Available Backends
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    info = gr.get_backend_info()
-    print(f"CUDA: {info['cuda_available']}")
-    print(f"Recommended: {info['recommended_backend']}")
+   adjacency = gr.generate_er(n=1_000, p=0.1, seed=0)
+   embedder = gr.GraphEmbedder(
+       adjacency=adjacency,
+       n_components=3,
+       L_min=40.0,
+       k_attr=1.0,
+       k_inter=1.0,
+       n_neighbors=15,
+       sample_size=2_048,
+       seed=0,
+   )
+   embedder.run_layout(num_iterations=30)
+   farthest = embedder.get_top_k(50)

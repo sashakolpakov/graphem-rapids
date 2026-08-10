@@ -193,7 +193,7 @@ Complete Example
     )
 
     # Compute embedding
-    embedder = gr.create_graphem(adjacency, n_components=2)
+    embedder = gr.GraphEmbedder(adjacency=adjacency, n_components=2)
     embedder.run_layout(num_iterations=50)
 
     # Visualize with community colors

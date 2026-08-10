@@ -15,9 +15,10 @@ help:
 
 # Fast tests for CI/quick validation
 test-fast:
-	pytest -m "fast and not slow and not gpu" -v --maxfail=3
+	pytest -q tests/test_canonical_embedder.py tests/test_generators.py
 
-test: test-fast
+test:
+	pytest -q
 
 # Comprehensive test suite (manual execution)
 test-comprehensive:
@@ -33,7 +34,7 @@ test-all:
 
 # Code quality
 lint:
-	python -m pylint graphem_rapids/ --exit-zero
+	python -m pylint graphem_rapids tests
 
 # Cleanup
 clean:

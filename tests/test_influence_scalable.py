@@ -3,6 +3,8 @@
 # pylint: disable=broad-exception-caught,missing-class-docstring
 # pylint: disable=missing-function-docstring,use-implicit-booleaness-not-comparison
 
+import inspect
+
 import numpy as np
 import pytest
 import scipy.sparse as sp
@@ -81,6 +83,22 @@ def test_ic_probability_extremes_are_exact():
     assert blocked.minimum == blocked.maximum == 1
     assert certain.mean == 6.0
     assert certain.minimum == certain.maximum == 6
+
+
+def test_ic_backend_is_required_and_never_inferred():
+    path = _undirected_csr(4, [(0, 1), (1, 2), (2, 3)])
+    with pytest.raises(TypeError, match="backend"):
+        inspect.signature(estimate_independent_cascade).bind(
+            path, [0], p=0.1, n_simulations=2
+        )
+    with pytest.raises(ValueError, match="explicitly 'cpu' or 'cupy'"):
+        estimate_independent_cascade(
+            path,
+            [0],
+            p=0.1,
+            n_simulations=2,
+            backend="automatic",
+        )
 
 
 def test_ic_trials_are_reproducible():
@@ -262,7 +280,7 @@ def test_graphem_selection_does_not_run_layout_by_default():
             self.layout_calls.append(num_iterations)
 
         @staticmethod
-        def topk_nodes(k):
+        def get_top_k(k):
             return list(range(k))
 
     embedder = Embedder()
@@ -275,14 +293,6 @@ def test_graphem_selection_does_not_run_layout_by_default():
     for invalid_k in (1.5, True, "1"):
         with pytest.raises(ValueError, match="k must be"):
             graphem_seed_selection(embedder, invalid_k)
-    for invalid_pool in (1.5, True, "2"):
-        with pytest.raises(ValueError, match="candidate_pool_size"):
-            graphem_seed_selection(
-                embedder,
-                1,
-                diversity=0.5,
-                candidate_pool_size=invalid_pool,
-            )
     with pytest.raises(ValueError, match="num_iterations"):
         graphem_seed_selection(embedder, 1, num_iterations=True)
 

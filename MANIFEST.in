@@ -1,7 +1,6 @@
 include README.md
 include LICENSE
 include CITATION.cff
-recursive-include docs *.py *.rst *.md
-recursive-include examples *.py *.ipynb
+recursive-include docs *.py *.rst
+recursive-include examples *.py
 recursive-include tests *.py
-global-exclude data/*

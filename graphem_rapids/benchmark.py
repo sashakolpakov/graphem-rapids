@@ -1,374 +1,156 @@
-"""
-Benchmark functionality for GraphEm Rapids.
-"""
+"""Small-graph quality measurements with explicit method status."""
 
+from __future__ import annotations
+
+import hashlib
+import numbers
 import time
-import logging
+
+import networkx as nx
 import numpy as np
 import scipy.sparse as sp
-import networkx as nx
 from scipy import stats
 
-from .backends.embedder_pytorch import GraphEmbedderPyTorch
-from .influence import graphem_seed_selection, ndlib_estimated_influence, greedy_seed_selection
-
-logger = logging.getLogger(__name__)
+from .embedder import GraphEmbedder
 
 
-def run_benchmark(graph_generator, graph_params, n_components=3, L_min=10.0, k_attr=0.5, k_inter=0.1,
-                 n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
-    """
-    Run a benchmark on the given graph using GraphEm Rapids.
+def _graph_fingerprint(adjacency):
+    upper = sp.triu(sp.csr_matrix(adjacency), k=1, format="coo")
+    edges = np.column_stack((upper.row, upper.col)).astype("<i8", copy=False)
+    order = np.lexsort((edges[:, 1], edges[:, 0]))
+    edges = edges[order]
+    return {
+        "vertices": int(adjacency.shape[0]),
+        "edges": int(edges.shape[0]),
+        "edge_sha256": hashlib.sha256(edges.tobytes(order="C")).hexdigest(),
+    }
 
-    Parameters
-    ----------
-    graph_generator : callable
-        Function to generate a graph (returns sparse adjacency matrix)
-    graph_params : dict
-        Parameters for the graph generator
-    n_components : int, default=3
-        Number of embedding components (dimensions)
-    L_min : float, default=10.0
-        Minimum spring length parameter
-    k_attr : float, default=0.5
-        Attraction force constant
-    k_inter : float, default=0.1
-        Intersection repulsion force constant
-    n_neighbors : int, default=15
-        Number of nearest neighbors for intersection detection
-    sample_size : int, default=512
-        Sample size for kNN computation
-    num_iterations : int, default=40
-        Number of layout iterations
-    backend : str, default='pytorch'
-        Backend to use ('pytorch', 'cuvs', or 'auto')
-    **kwargs
-        Additional parameters passed to the embedder
 
-    Returns
-    -------
-    dict
-        Benchmark results including timings and graph metrics
-    """
-    logger.info("Running benchmark with %s...", graph_generator.__name__)
-
-    # Generate the graph (returns sparse adjacency matrix)
-    start_time = time.time()
-    adjacency = graph_generator(**graph_params)
-
-    # Count vertices and edges
-    n = adjacency.shape[0]
-    m = adjacency.nnz // 2  # Divide by 2 for undirected graphs
-
-    logger.info("Generated graph with %d vertices and %d edges", n, m)
-
-    # Convert to NetworkX graph for centrality calculations
-    nx_graph = nx.from_scipy_sparse_array(adjacency)
-
-    # Calculate centrality measures
-    logger.info("Calculating centrality measures...")
-    degree = np.array([d for _, d in nx_graph.degree()])
-
-    betweenness = np.zeros(n)
-    btw_dict = nx.betweenness_centrality(nx_graph)
-    for i, val in btw_dict.items():
-        betweenness[i] = val
-
-    eigenvector = np.zeros(n)
+def _measure_method(name, compute, vertex_count):
+    started = time.perf_counter()
     try:
-        eig_dict = nx.eigenvector_centrality_numpy(nx_graph)
-        for i, val in eig_dict.items():
-            eigenvector[i] = val
-    except (nx.NetworkXError, nx.AmbiguousSolution) as e:
-        logger.warning("Eigenvector centrality calculation failed: %s", e)
-        logger.warning("Setting eigenvector centrality to degree centrality as fallback")
-        # Use degree centrality as a fallback
-        deg_dict = nx.degree_centrality(nx_graph)
-        for i, val in deg_dict.items():
-            eigenvector[i] = val
-
-    pagerank = np.zeros(n)
-    pr_dict = nx.pagerank(nx_graph)
-    for i, val in pr_dict.items():
-        pagerank[i] = val
-
-    closeness = np.zeros(n)
-    close_dict = nx.closeness_centrality(nx_graph)
-    for i, val in close_dict.items():
-        closeness[i] = val
-
-    node_load = np.zeros(n)
-    node_load_dict = nx.load_centrality(nx_graph)
-    for i, val in node_load_dict.items():
-        node_load[i] = val
-
-    # Create embedder
-    logger.info("Creating embedder...")
-
-    # Ensure adjacency is in CSR format
-    if not sp.isspmatrix_csr(adjacency):
-        adjacency = adjacency.tocsr()
-
-    embedder = GraphEmbedderPyTorch(
-        adjacency=adjacency,
-        n_components=n_components,
-        L_min=L_min,
-        k_attr=k_attr,
-        k_inter=k_inter,
-        n_neighbors=n_neighbors,
-        sample_size=sample_size,
-        verbose=True,
-        **kwargs
-    )
-
-    # Run layout and get embedding
-    logger.info("Running layout for %d iterations...", num_iterations)
-    layout_start = time.time()
-    embedder.run_layout(num_iterations=num_iterations)
-    layout_time = time.time() - layout_start
-
-    # Get positions and calculate radial distances
-    positions = np.array(embedder.positions.cpu().numpy() if hasattr(embedder.positions, 'cpu') else embedder.positions)
-    radii = np.linalg.norm(positions, axis=1)
-
-    # Return benchmark data
-    result = {
-        'n': n,
-        'm': m,
-        'density': 2 * m / (n * (n - 1)) if n > 1 else 0.0,
-        'avg_degree': 2 * m / n if n > 0 else 0.0,
-        'layout_time': layout_time,
-        'graph_type': graph_generator.__name__,
-        'n_components': n_components,
-        'backend': backend,
-        'radii': radii,
-        'positions': positions,
-        'degree': degree,
-        'betweenness': betweenness,
-        'eigenvector': eigenvector,
-        'pagerank': pagerank,
-        'closeness': closeness,
-        'node_load': node_load
-    }
-
-    total_time = time.time() - start_time
-    result['total_time'] = total_time
-
-    logger.info("Benchmark completed in %.2f seconds", total_time)
-    return result
-
-
-def benchmark_correlations(graph_generator, graph_params, n_components=2, L_min=10.0, k_attr=0.5, k_inter=0.1,
-                          n_neighbors=15, sample_size=512, num_iterations=40, backend='pytorch', **kwargs):
-    """
-    Run a benchmark to calculate correlations between embedding radii and centrality measures.
-
-    Parameters
-    ----------
-    graph_generator : callable
-        Function to generate a graph (returns sparse adjacency matrix)
-    graph_params : dict
-        Parameters for the graph generator
-    n_components : int, default=2
-        Number of embedding components (dimensions)
-    L_min, k_attr, k_inter : float
-        Force-directed layout parameters
-    n_neighbors : int, default=15
-        Number of nearest neighbors for intersection detection
-    sample_size : int, default=512
-        Sample size for kNN computation
-    num_iterations : int, default=40
-        Number of layout iterations
-    backend : str, default='pytorch'
-        Backend to use
-    **kwargs
-        Additional embedder parameters
-
-    Returns
-    -------
-    dict
-        Benchmark results with correlation coefficients for centrality measures
-    """
-    # Run the benchmark to get basic metrics
-    results = run_benchmark(
-        graph_generator,
-        graph_params,
-        n_components=n_components,
-        L_min=L_min,
-        k_attr=k_attr,
-        k_inter=k_inter,
-        n_neighbors=n_neighbors,
-        sample_size=sample_size,
-        num_iterations=num_iterations,
-        backend=backend,
-        **kwargs
-    )
-
-    # Calculate correlations with radial distances
-    radii = results['radii']
-    correlations = {}
-
-    # Degree correlation
-    rho, p = stats.spearmanr(radii, results['degree'])
-    correlations['degree'] = {'rho': rho, 'p': p}
-
-    # Betweenness correlation
-    rho, p = stats.spearmanr(radii, results['betweenness'])
-    correlations['betweenness'] = {'rho': rho, 'p': p}
-
-    # Eigenvector correlation
-    rho, p = stats.spearmanr(radii, results['eigenvector'])
-    correlations['eigenvector'] = {'rho': rho, 'p': p}
-
-    # PageRank correlation
-    rho, p = stats.spearmanr(radii, results['pagerank'])
-    correlations['pagerank'] = {'rho': rho, 'p': p}
-
-    # Closeness correlation
-    rho, p = stats.spearmanr(radii, results['closeness'])
-    correlations['closeness'] = {'rho': rho, 'p': p}
-
-    # Node load correlation
-    rho, p = stats.spearmanr(radii, results['node_load'])
-    correlations['node_load'] = {'rho': rho, 'p': p}
-
-    # Add correlations to results
-    results['correlations'] = correlations
-
-    return results
-
-
-def run_influence_benchmark(graph_generator, graph_params, k=10, p=0.1, iterations=200,
-                           n_components=3, num_layout_iterations=20, layout_params=None, backend='pytorch'):
-    """
-    Run a benchmark comparing influence maximization methods.
-
-    Parameters
-    ----------
-    graph_generator : callable
-        Function to generate a graph (returns sparse adjacency matrix)
-    graph_params : dict
-        Parameters for the graph generator
-    k : int, default=10
-        Number of seed nodes to select for influence maximization
-    p : float, default=0.1
-        Propagation probability for influence diffusion
-    iterations : int, default=200
-        Number of Monte Carlo iterations for influence estimation
-    n_components : int, default=3
-        Number of embedding components (dimensions)
-    num_layout_iterations : int, default=20
-        Number of force-directed layout iterations
-    layout_params : dict, optional
-        Additional parameters for embedder initialization (L_min, k_attr, k_inter, etc.)
-    backend : str, default='pytorch'
-        Backend to use for embedding ('pytorch', 'cuvs', or 'auto')
-
-    Returns
-    -------
-    dict
-        Benchmark results comparing GraphEm vs Greedy seed selection with influence metrics
-    """
-    logger.info("Running influence benchmark with %s...", graph_generator.__name__)
-
-    # Generate the graph (returns sparse adjacency matrix)
-    start_time = time.time()
-    adjacency = graph_generator(**graph_params)
-
-    # Count vertices and edges
-    n = adjacency.shape[0]
-    m = adjacency.nnz // 2  # Divide by 2 for undirected graphs
-
-    logger.info("Generated graph with %d vertices and %d edges", n, m)
-
-    # Convert to NetworkX graph
-    nx_graph = nx.from_scipy_sparse_array(adjacency)
-
-    # Default layout parameters
-    if layout_params is None:
-        layout_params = {
-            'L_min': 10.0,
-            'k_attr': 0.5,
-            'k_inter': 0.1,
-            'n_neighbors': 15,
-            'sample_size': 512,
-            'batch_size': 1024
+        mapping = compute()
+        values = np.empty(vertex_count, dtype=np.float64)
+        for vertex in range(vertex_count):
+            values[vertex] = mapping[vertex] if hasattr(mapping, "__getitem__") else mapping
+        if not np.all(np.isfinite(values)):
+            raise FloatingPointError(f"{name} produced non-finite values")
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        return {
+            "status": "failed",
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "seconds": time.perf_counter() - started,
         }
-
-    # Create embedder
-    logger.info("Creating embedder...")
-
-    # Ensure adjacency is in CSR format
-    if not sp.isspmatrix_csr(adjacency):
-        adjacency = adjacency.tocsr()
-
-    embedder = GraphEmbedderPyTorch(
-        adjacency=adjacency,
-        n_components=n_components,
-        verbose=True,
-        **layout_params
-    )
-
-    # Run GraphEm-based seed selection
-    logger.info("Running GraphEm seed selection...")
-    graphem_start = time.time()
-    graphem_seeds = graphem_seed_selection(embedder, k, num_iterations=num_layout_iterations)
-    graphem_time = time.time() - graphem_start
-
-    # Run greedy seed selection
-    logger.info("Running greedy seed selection...")
-    greedy_start = time.time()
-    greedy_seeds, greedy_iters = greedy_seed_selection(nx_graph, k, p, iterations)
-    greedy_time = time.time() - greedy_start
-
-    # Evaluate influence for GraphEm seeds
-    logger.info("Evaluating GraphEm influence...")
-    graphem_eval_start = time.time()
-    graphem_influence, _ = ndlib_estimated_influence(nx_graph, graphem_seeds, p, iterations)
-    graphem_eval_time = time.time() - graphem_eval_start
-
-    # Evaluate influence for Greedy seeds
-    logger.info("Evaluating Greedy influence...")
-    greedy_eval_start = time.time()
-    greedy_influence, _ = ndlib_estimated_influence(nx_graph, greedy_seeds, p, iterations)
-    greedy_eval_time = time.time() - greedy_eval_start
-
-    # Calculate random baseline
-    logger.info("Evaluating random baseline...")
-    random_influences = []
-    for _ in range(10):
-        random_seeds = np.random.choice(n, k, replace=False)
-        random_influence, _ = ndlib_estimated_influence(nx_graph, random_seeds, p, iterations)
-        random_influences.append(random_influence)
-    random_influence = np.mean(random_influences)
-
-    # Compile results
-    results = {
-        'graph_type': graph_generator.__name__,
-        'n': n,
-        'm': m,
-        'backend': backend,
-        'graphem_seeds': graphem_seeds,
-        'greedy_seeds': greedy_seeds,
-        'graphem_influence': graphem_influence,
-        'greedy_influence': greedy_influence,
-        'random_influence': random_influence,
-        'graphem_time': graphem_time,
-        'greedy_time': greedy_time,
-        'graphem_eval_time': graphem_eval_time,
-        'greedy_eval_time': greedy_eval_time,
-        'greedy_iterations': greedy_iters,
-        'graphem_norm_influence': graphem_influence / n,
-        'greedy_norm_influence': greedy_influence / n,
-        'random_norm_influence': random_influence / n
+    return {
+        "status": "passed",
+        "seconds": time.perf_counter() - started,
+        "values": values,
+        "value_sha256": hashlib.sha256(values.astype("<f8").tobytes()).hexdigest(),
     }
 
-    # Calculate efficiency ratios
-    results['graphem_efficiency'] = results['graphem_norm_influence'] / graphem_time if graphem_time > 0 else 0
-    results['greedy_efficiency'] = results['greedy_norm_influence'] / greedy_time if greedy_time > 0 else 0
 
-    total_time = time.time() - start_time
-    results['total_time'] = total_time
+def _centralities(graph):
+    vertex_count = graph.number_of_nodes()
+    methods = {
+        "degree": lambda: dict(graph.degree()),
+        "betweenness": lambda: nx.betweenness_centrality(graph),
+        "eigenvector": lambda: nx.eigenvector_centrality_numpy(graph),
+        "pagerank": lambda: nx.pagerank(graph),
+        "closeness": lambda: nx.closeness_centrality(graph),
+        "load": lambda: nx.load_centrality(graph),
+    }
+    return {
+        name: _measure_method(name, function, vertex_count)
+        for name, function in methods.items()
+    }
 
-    logger.info("Influence benchmark completed")
-    return results
+
+def _topk_overlap(first_scores, second_scores, count):
+    first = set(np.lexsort((np.arange(len(first_scores)), -first_scores))[:count])
+    second = set(np.lexsort((np.arange(len(second_scores)), -second_scores))[:count])
+    return len(first & second)
+
+
+def run_benchmark(
+    graph_generator,
+    graph_params,
+    *,
+    n_components=3,
+    L_min=10.0,
+    k_attr=0.5,
+    k_inter=0.1,
+    n_neighbors=15,
+    sample_size=512,
+    num_iterations=40,
+    seed=0,
+    top_k=50,
+):
+    """Measure GraphEm and each centrality without substituting failed methods."""
+    total_started = time.perf_counter()
+    if isinstance(top_k, (bool, np.bool_)) or not isinstance(top_k, numbers.Integral):
+        raise TypeError("top_k must be an integer")
+    if top_k <= 0:
+        raise ValueError("top_k must be positive")
+    adjacency = sp.csr_matrix(graph_generator(**graph_params))
+    graph = nx.from_scipy_sparse_array(adjacency)
+    centralities = _centralities(graph)
+
+    embedder = GraphEmbedder(
+        adjacency=adjacency,
+        n_components=n_components,
+        L_min=L_min,
+        k_attr=k_attr,
+        k_inter=k_inter,
+        n_neighbors=n_neighbors,
+        sample_size=sample_size,
+        seed=seed,
+    )
+    layout_started = time.perf_counter()
+    embedder.run_layout(num_iterations=num_iterations)
+    layout_seconds = time.perf_counter() - layout_started
+    positions = embedder.get_positions()
+    radii = np.linalg.norm(positions, axis=1)
+    count = min(int(top_k), len(radii))
+
+    for record in centralities.values():
+        if record["status"] != "passed":
+            continue
+        values = record.pop("values")
+        coefficient, p_value = stats.spearmanr(radii, values)
+        record["radius_spearman"] = float(coefficient)
+        record["radius_spearman_p"] = float(p_value)
+        record["farthest_topk_overlap"] = _topk_overlap(radii, values, count)
+        record["nearest_topk_overlap"] = _topk_overlap(-radii, values, count)
+
+    return {
+        "schema": "graphem-quality-v1",
+        "claim_ready": False,
+        "graph": _graph_fingerprint(adjacency),
+        "configuration": {
+            "n_components": n_components,
+            "L_min": L_min,
+            "k_attr": k_attr,
+            "k_inter": k_inter,
+            "n_neighbors": n_neighbors,
+            "sample_size": sample_size,
+            "num_iterations": num_iterations,
+            "seed": seed,
+            "top_k": count,
+        },
+        "graphem": {
+            "status": "passed",
+            "layout_seconds": layout_seconds,
+            "radius_sha256": hashlib.sha256(
+                radii.astype("<f8").tobytes()
+            ).hexdigest(),
+            "diagnostics": embedder.get_diagnostics(),
+        },
+        "centralities": centralities,
+        "total_seconds": time.perf_counter() - total_started,
+    }
+
+
+def benchmark_correlations(*args, **kwargs):
+    """Return the same explicit-status record as :func:`run_benchmark`."""
+    return run_benchmark(*args, **kwargs)

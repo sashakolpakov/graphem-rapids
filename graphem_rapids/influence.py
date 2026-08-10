@@ -54,53 +54,20 @@ def graphem_seed_selection(
     embedder,
     k,
     num_iterations=0,
-    diversity=0.0,
-    candidate_pool_size=None,
 ):
-    """Select the ``k`` largest radial scores without forcing a host copy.
-
-    New GPU backends expose ``topk_nodes`` so a million-row position matrix need
-    not be copied to NumPy just to retain a handful of node identifiers.  The
-    fallback preserves the original embedder protocol.
-    """
+    """Select the ``k`` largest canonical GraphEm radii."""
     k = _nonnegative_integer(k, "k")
-    if candidate_pool_size is not None:
-        candidate_pool_size = _nonnegative_integer(
-            candidate_pool_size, "candidate_pool_size"
-        )
     embedder_size = getattr(embedder, "n", None)
     if embedder_size is not None and k > embedder_size:
         raise ValueError("k cannot exceed the number of vertices")
-    if not 0.0 <= diversity <= 1.0:
-        raise ValueError("diversity must be between zero and one")
     if num_iterations is None:
         num_iterations = 0
     num_iterations = _nonnegative_integer(num_iterations, "num_iterations")
     if num_iterations:
         embedder.run_layout(num_iterations=num_iterations)
-    if diversity and hasattr(embedder, "diverse_topk_nodes"):
-        if candidate_pool_size is not None and candidate_pool_size < k:
-            raise ValueError("candidate_pool_size must be at least k")
-        return [
-            int(node)
-            for node in embedder.diverse_topk_nodes(
-                k,
-                diversity=diversity,
-                candidate_pool_size=candidate_pool_size,
-            )
-        ]
-    if hasattr(embedder, "topk_nodes"):
-        return [int(node) for node in embedder.topk_nodes(k)]
-
-    positions = embedder.get_positions()
-    if k > len(positions):
-        raise ValueError("k cannot exceed the number of vertices")
-    radial_distances = np.linalg.norm(positions, axis=1)
-    if k == 0:
-        return []
-    candidates = np.argpartition(radial_distances, -k)[-k:]
-    order = np.argsort(radial_distances[candidates])[::-1]
-    return candidates[order].astype(np.int64).tolist()
+    if not hasattr(embedder, "get_top_k"):
+        raise TypeError("embedder must implement the canonical get_top_k method")
+    return [int(node) for node in embedder.get_top_k(k)]
 
 
 def _is_device_sparse(graph):
@@ -864,7 +831,8 @@ def estimate_independent_cascade(
     p=0.1,
     n_simulations=256,
     random_seed=0,
-    backend="auto",
+    *,
+    backend,
     batch_size=None,
     available_memory_bytes=None,
     assume_validated_csr=False,
@@ -882,8 +850,8 @@ def estimate_independent_cascade(
         Per-directed-edge activation probability.
     n_simulations : int
         Number of independent cascades, not the number of diffusion time steps.
-    backend : {'auto', 'cpu', 'cupy'}
-        ``auto`` uses CuPy only when a CUDA device is available.
+    backend : {'cpu', 'cupy'}
+        Required execution engine. It is never inferred or substituted.
     available_memory_bytes : int, optional
         Allocator-aware capacity used for GPU workspace planning. This is useful
         with external pools such as RMM whose reusable blocks are not included in
@@ -898,8 +866,8 @@ def estimate_independent_cascade(
     InfluenceEstimate
         Mean, sample standard deviation, standard error, and range.
     """
-    if backend not in ("auto", "cpu", "cupy"):
-        raise ValueError("backend must be 'auto', 'cpu', or 'cupy'")
+    if backend not in ("cpu", "cupy"):
+        raise ValueError("backend must be explicitly 'cpu' or 'cupy'")
     if batch_size is not None and (
         isinstance(batch_size, (bool, np.bool_))
         or not isinstance(batch_size, numbers.Integral)
@@ -919,15 +887,7 @@ def estimate_independent_cascade(
         adjacency, seeds, p, n_simulations, random_seed
     )
 
-    use_cupy = backend == "cupy"
-    if backend == "auto":
-        try:
-            import cupy as cp  # pylint: disable=import-outside-toplevel
-            use_cupy = cp.cuda.runtime.getDeviceCount() > 0
-        except (ImportError, RuntimeError):
-            use_cupy = False
-
-    if use_cupy:
+    if backend == "cupy":
         spreads = _estimate_ic_cupy(
             adjacency,
             seeds,
@@ -1078,7 +1038,7 @@ def ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=200):
 
 
 def greedy_seed_selection(G, k, p=0.1, iterations_count=200):
-    """Legacy exhaustive greedy selection using one NDlib draw per candidate."""
+    """Exhaustive single-draw NDlib selection retained as an explicit comparator."""
     seeds = []
     total_iters = 0
     nodes = list(G.nodes())

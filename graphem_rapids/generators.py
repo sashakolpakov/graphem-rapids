@@ -8,7 +8,7 @@ All generators return sparse adjacency matrices instead of simple edge lists.
 import numpy as np
 import networkx as nx
 import scipy.sparse as sp
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay  # pylint: disable=no-name-in-module
 
 
 def _nx_to_sparse_adjacency(G):
@@ -387,7 +387,7 @@ def generate_delaunay_triangulation(n=100, seed=0):
          Sparse adjacency matrix (n × n).
     """
     # Generate random points in 2D unit square
-    rng = np.random.RandomState(seed)
+    rng = np.random.RandomState(seed)  # pylint: disable=no-member
     pts = rng.rand(n, 2)
 
     # Compute Delaunay triangulation

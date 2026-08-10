@@ -53,8 +53,8 @@ Thank you for your interest in contributing to GraphEm Rapids!
 
 - **Bug fixes** - Always welcome!
 - **New graph generators** - Expand the collection
-- **Performance improvements** - PyTorch/RAPIDS optimization
-- **Backend enhancements** - cuVS integration, memory management
+- **Performance improvements** - optimize the canonical CUDA/RAPIDS algorithm
+- **Correctness hardening** - strengthen mathematical and provenance checks
 - **Documentation** - Examples, tutorials, API docs
 - **Tests** - Improve coverage and reliability
 
