@@ -9,6 +9,11 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
+try:
+    import torch
+except ImportError:  # pragma: no cover - depends on the test environment
+    torch = None
+
 import graphem_rapids
 import graphem_rapids.embedder as implementation
 from graphem_rapids.embedder import GraphEmbedder
@@ -277,31 +282,46 @@ def test_query_edge_sampling_is_uniform_without_replacement():
     assert len(observed_subsets) == 70
 
 
-def test_scipy_spectral_embedding_is_bitwise_repeatable_on_degenerate_graph():
-    left_size = 10
-    right_size = 20
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_embedding_is_repeatable_on_degenerate_graph():
+    left_size = 50
+    right_size = 100
     sources = np.repeat(np.arange(left_size, dtype=np.int64), right_size)
     targets = np.tile(
         np.arange(left_size, left_size + right_size, dtype=np.int64), left_size
     )
     edges = np.column_stack((sources, targets))
 
-    first = GraphEmbedder._scipy_spectral_embedding(
-        edges, left_size + right_size, 4, 20250608
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        first, first_diagnostics = GraphEmbedder._torch_spectral_embedding(
+            edges, left_size + right_size, 4, 20250608, device="cpu"
+        )
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        second, second_diagnostics = GraphEmbedder._torch_spectral_embedding(
+            edges, left_size + right_size, 4, 20250608, device="cpu"
+        )
+
+    np.testing.assert_allclose(first.numpy(), second.numpy(), atol=1.0e-7, rtol=1.0e-7)
+    np.testing.assert_allclose(
+        first @ first.mT, second @ second.mT, atol=1.0e-6, rtol=1.0e-6
     )
-    second = GraphEmbedder._scipy_spectral_embedding(
-        edges, left_size + right_size, 4, 20250608
+    np.testing.assert_allclose(
+        first_diagnostics["eigenvalues"],
+        [0.0, 1.0, 1.0, 1.0, 1.0],
+        atol=1.0e-8,
     )
+    assert (
+        first_diagnostics["maximum_eigenpair_residual_norm_ratio"] <= 1.0e-8
+    )
+    assert first_diagnostics["orthogonality_error"] <= 1.0e-8
+    assert first_diagnostics["start_sha256"] == second_diagnostics["start_sha256"]
+    repeat_metrics = GraphEmbedder._torch_subspace_repeat_metrics(first, second)
+    assert repeat_metrics["projector_frobenius_distance"] <= 1.0e-5
+    assert repeat_metrics["largest_principal_angle_radians"] <= 1.0e-5
 
-    np.testing.assert_array_equal(first[0], second[0])
-    assert first[1:] == second[1:]
-    np.testing.assert_allclose(first[1], [0.0, 1.0, 1.0, 1.0, 1.0], atol=1.0e-12)
-    pivots = np.argmax(np.abs(first[0]), axis=0)
-    assert np.all(first[0][pivots, np.arange(4)] >= 0)
-    assert first[2] <= 1.0e-12
 
-
-def test_scipy_spectral_embedding_preserves_components_and_isolate():
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_embedding_preserves_components_and_isolate():
     first_component = np.column_stack(
         (np.arange(19, dtype=np.int64), np.arange(1, 20, dtype=np.int64))
     )
@@ -310,15 +330,91 @@ def test_scipy_spectral_embedding_preserves_components_and_isolate():
     )
     edges = np.vstack((first_component, second_component))
 
-    positions, eigenvalues, max_residual = GraphEmbedder._scipy_spectral_embedding(
-        edges, 26, 3, 7
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        positions, diagnostics = GraphEmbedder._torch_spectral_embedding(
+            edges, 26, 3, 7, device="cpu"
+        )
+
+    assert tuple(positions.shape) == (26, 3)
+    assert positions.dtype == torch.float32
+    assert bool(torch.isfinite(positions).all())
+    assert sum(abs(value) < 1.0e-8 for value in diagnostics["eigenvalues"]) >= 3
+    assert diagnostics["maximum_eigenpair_residual_norm_ratio"] <= 1.0e-8
+
+
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_cpu_and_cuda_use_the_same_function():
+    if not torch.cuda.is_available():
+        pytest.skip("Torch CUDA is unavailable")
+    edges = np.column_stack(
+        (np.arange(11, dtype=np.int64), np.arange(1, 12, dtype=np.int64))
+    )
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        cpu_positions, cpu_diagnostics = GraphEmbedder._torch_spectral_embedding(
+            edges, 12, 2, 19, device="cpu"
+        )
+    cuda_positions, cuda_diagnostics = GraphEmbedder._torch_spectral_embedding(
+        edges, 12, 2, 19, device="cuda"
+    )
+    np.testing.assert_allclose(
+        cpu_diagnostics["eigenvalues"],
+        cuda_diagnostics["eigenvalues"],
+        atol=1.0e-7,
+        rtol=1.0e-7,
+    )
+    np.testing.assert_allclose(
+        (cpu_positions @ cpu_positions.mT).numpy(),
+        (cuda_positions @ cuda_positions.mT).cpu().numpy(),
+        atol=1.0e-5,
+        rtol=1.0e-5,
     )
 
-    assert positions.shape == (26, 3)
-    assert positions.dtype == np.float32
-    assert np.all(np.isfinite(positions))
-    assert sum(abs(value) < 1.0e-10 for value in eigenvalues) >= 2
-    assert max_residual <= 1.0e-8
+
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_device_selection_is_loud_and_fail_closed(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="CUDA.*unavailable"):
+        implementation._resolve_spectral_device("cuda")
+    with pytest.warns(RuntimeWarning, match="CUDA is unavailable"):
+        selected, requested, reason = implementation._resolve_spectral_device("auto")
+    assert selected.type == "cpu"
+    assert requested == "auto"
+    assert "False" in reason
+    with pytest.warns(RuntimeWarning, match="explicitly selected"):
+        selected, requested, reason = implementation._resolve_spectral_device("cpu")
+    assert selected.type == "cpu"
+    assert requested == "cpu"
+    assert reason == "CPU was explicitly selected"
+
+
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_rejects_graphs_outside_lobpcg_domain():
+    edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.int64)
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        with pytest.raises(ValueError, match="n_vertices >= 3"):
+            GraphEmbedder._torch_spectral_embedding(
+                edges, 4, 2, 0, device="cpu"
+            )
+
+
+@pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
+def test_torch_spectral_rejects_bad_solver_output(monkeypatch):
+    edges = np.column_stack(
+        (np.arange(11, dtype=np.int64), np.arange(1, 12, dtype=np.int64))
+    )
+
+    def bad_lobpcg(matrix, *, k, **_kwargs):
+        return (
+            torch.zeros(k, dtype=torch.float64),
+            torch.ones((matrix.shape[0], k), dtype=torch.float64),
+        )
+
+    monkeypatch.setattr(torch, "lobpcg", bad_lobpcg)
+    with pytest.warns(RuntimeWarning, match="using CPU"):
+        with pytest.raises(RuntimeError, match="residual exceeds"):
+            GraphEmbedder._torch_spectral_embedding(
+                edges, 12, 2, 19, device="cpu"
+            )
 
 
 @pytest.mark.parametrize("sparse_format", ["csr", "coo"])
@@ -469,17 +565,35 @@ def test_source_uses_one_disconnected_graph_and_adaptive_tie_contract():
     assert "connected_components" not in source
     assert "must not contain isolated vertices" not in source
     assert "if eigen_count >= self.n" in source
-    assert "sp_linalg.eigsh" in source
-    assert "sp_csgraph.laplacian" in source
-    assert 'which="SM"' in source
-    assert "lobpcg" not in source.lower()
-    assert "dtype=np.float64" in source
-    assert 'kind="stable"' in source
-    assert "tol=SPECTRAL_TOLERANCE" in source
-    assert "maxiter=SPECTRAL_MAX_ITERATIONS" in source
+    assert "torch.lobpcg" in source
+    assert "torch.sparse_coo_tensor" in source
+    assert "torch.sparse.mm" in source
+    assert "sp_" + "linalg" not in source
+    assert "sp_" + "csgraph" not in source
+    assert "eig" + "sh" not in source
+    assert 'dtype=torch.float64' in source
+    assert "stable=True" in source
+    assert "tol=float(SPECTRAL_TOLERANCE)" in source
+    assert "niter=SPECTRAL_MAX_ITERATIONS" in source
+    assert 'method="ortho"' in source
+    assert "largest=True" in source
+    assert "cp.from_dlpack" in source
     assert "raw_search_boundary = distances[:, -1].copy()" in source
     assert "raw_search_boundary > cutoff" in source
     assert "search_width = min(self.n_edges, search_width * 2)" in source
+
+
+def test_source_tree_has_no_cpu_eigensolver_path():
+    root = Path(__file__).parents[1]
+    tracked = "\n".join(
+        path.read_text(encoding="utf-8")
+        for pattern in ("*.py", "*.md", "*.rst")
+        for path in sorted(root.rglob(pattern))
+        if ".git" not in path.parts
+    ).lower()
+    assert "scipy.sparse." + "linalg" not in tracked
+    assert "scipy " + "eig" + "sh" not in tracked
+    assert "_scipy_" + "spectral_embedding" not in tracked
 
 
 def test_host_adjacency_preserves_an_isolated_vertex():

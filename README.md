@@ -2,22 +2,23 @@
 
 GraphEm embeds an undirected graph in a low-dimensional Euclidean space and
 scores each vertex by its distance from the origin.  This repository contains
-one implementation of the corrected paper algorithm: the paper-faithful CPU
-SciPy spectral start followed by CUDA/RAPIDS search and force refinement.
+one implementation of the corrected paper algorithm: a Torch tensor spectral
+start followed by CUDA/RAPIDS search and force refinement.
 
-The implementation has no runtime algorithm selector.  Construction fails
-when the required GPU stack, graph invariants, eigensolve, midpoint search, or
-numerical checks do not pass.
+The spectral tensor function accepts a device, while production and benchmark
+runs pin ``device="cuda"``.  Explicit CPU selection and ``"auto"`` selection
+when CUDA is unavailable emit a ``RuntimeWarning``; a CUDA request never
+downgrades.  Construction fails when the required GPU stack, graph invariants,
+eigensolve, midpoint search, or numerical checks do not pass.
 
 ## Canonical algorithm
 
 For every run, GraphEm:
 
 1. validates one unweighted, undirected, loop-free, duplicate-free graph;
-2. computes one deterministic float64 CPU SciPy `eigsh(SM)`
-   normalized-Laplacian eigenspace and drops the first eigenvector, using
-   diagonal zero for isolated vertices and diagonal one for vertices of
-   positive degree;
+2. computes a float64 normalized-Laplacian eigenspace with Torch LOBPCG on the
+   selected tensor device and drops the first eigenvector, using diagonal zero
+   for isolated vertices and diagonal one for vertices of positive degree;
 3. draws one deterministic uniform query-edge subset without replacement using
    the recorded PCG64/Floyd recipe;
 4. on every iteration, recomputes all edge midpoints and performs exact cuVS
@@ -40,7 +41,7 @@ index, cached neighbour set, alternate score orientation, or second embedder.
 
 ## Installation
 
-The package requires a CUDA 12 RAPIDS environment with CuPy and cuVS.
+The package requires a CUDA 12 environment with Torch, CuPy, and cuVS.
 The pinned 26.06 runtime also requires Python 3.11 or newer.  Disconnected
 graphs and isolated vertices use the same normalized-Laplacian and force
 rules; vertices without incident edges simply receive no edge force.
@@ -64,6 +65,7 @@ embedder = gr.GraphEmbedder(
     n_neighbors=15,
     sample_size=2_048,
     seed=0,
+    device="cuda",
 )
 embedder.run_layout(num_iterations=30)
 

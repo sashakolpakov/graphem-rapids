@@ -6,6 +6,10 @@ correctness repairs to spring dynamics, spectral initialization, and global
 edge identities for midpoint neighbours.
 """
 
+# PyTorch exposes several compiled linalg callables without signatures that
+# pylint can recognize.
+# pylint: disable=not-callable
+
 from __future__ import annotations
 
 import hashlib
@@ -13,11 +17,10 @@ import logging
 import numbers
 import time
 from typing import Optional
+import warnings
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.csgraph as sp_csgraph
-import scipy.sparse.linalg as sp_linalg
 
 try:  # Imports remain lazy so documentation and CPU contract tests can import.
     from cuvs.neighbors import brute_force
@@ -31,15 +34,26 @@ except ImportError as gpu_import_error:  # pragma: no cover - host dependent
 else:  # pragma: no cover - host dependent
     _GPU_IMPORT_ERROR = None
 
+try:  # Torch is independently optional for import-time contract inspection.
+    import torch
+except ImportError as torch_import_error:  # pragma: no cover - host dependent
+    torch = None
+    _TORCH_IMPORT_ERROR = torch_import_error
+else:  # pragma: no cover - host dependent
+    _TORCH_IMPORT_ERROR = None
+
 
 LOGGER = logging.getLogger(__name__)
 EPSILON = np.float32(1.0e-6)
 FLOAT32_UNIT_ROUNDOFF = np.float64(2.0**-24)
-FLOAT64_TINY = np.float64(2.2250738585072014e-308)
 SPECTRAL_TOLERANCE = np.float64(1.0e-10)
-SPECTRAL_MAX_ITERATIONS = 5000
+SPECTRAL_MAX_ITERATIONS = 500
 SPECTRAL_RESIDUAL_BOUND = np.float64(1.0e-8)
-SPECTRAL_PHASE_MULTIPLIER = np.float64(0.6180339887498949)
+SPECTRAL_ORTHOGONALITY_BOUND = np.float64(1.0e-8)
+SPECTRAL_SHIFT = np.float64(3.0)
+SPECTRAL_CLUSTER_BOUND = np.float64(1.0e-8)
+SPECTRAL_START_ALGORITHM = "analytic-sine-cosine-qr-float64-v1"
+TORCH_SPECTRAL_BACKEND = "torch-lobpcg-shifted-normalized-laplacian-v1"
 
 
 _DETERMINISTIC_FORCE_KERNELS = r"""
@@ -115,6 +129,60 @@ def _require_gpu() -> None:
         ) from _GPU_IMPORT_ERROR
 
 
+def _require_torch() -> None:
+    if _TORCH_IMPORT_ERROR is not None:
+        raise ImportError(
+            "GraphEm spectral initialization requires PyTorch; install the "
+            "pinned CUDA-enabled build used by the canonical executor"
+        ) from _TORCH_IMPORT_ERROR
+
+
+def _resolve_spectral_device(requested):
+    """Resolve one Torch spectral device without an implicit CUDA downgrade."""
+    _require_torch()
+    requested_text = str(requested).lower()
+    if requested_text == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda"), requested_text, None
+        reason = "torch.cuda.is_available() returned False"
+        warnings.warn(
+            "GraphEm spectral initialization is using CPU because CUDA is "
+            f"unavailable ({reason}); golden and scaling runs must pin "
+            "device='cuda'",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return torch.device("cpu"), requested_text, reason
+
+    try:
+        resolved = torch.device(requested)
+    except (RuntimeError, TypeError) as error:
+        raise ValueError("device must be 'cuda', 'cpu', 'auto', or a torch.device") \
+            from error
+    if resolved.type not in {"cuda", "cpu"}:
+        raise ValueError("GraphEm spectral initialization supports only CUDA or CPU")
+    if resolved.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA spectral initialization was requested but Torch reports "
+                "that CUDA is unavailable"
+            )
+        if resolved.index is not None and resolved.index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"CUDA spectral device index {resolved.index} is unavailable"
+            )
+        return resolved, requested_text, None
+
+    reason = "CPU was explicitly selected"
+    warnings.warn(
+        "GraphEm spectral initialization is using CPU because device='cpu' "
+        "was explicitly selected; golden and scaling runs must pin device='cuda'",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+    return resolved, requested_text, reason
+
+
 def _positive_integer(name: str, value: object) -> int:
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Integral):
         raise TypeError(f"{name} must be an integer")
@@ -167,6 +235,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         verbose: bool = True,
         logger_instance: Optional[logging.Logger] = None,
         *,
+        device="cuda",
         edges=None,
         n_vertices: Optional[int] = None,
     ):
@@ -191,6 +260,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             raise TypeError("verbose must be boolean")
         self.verbose = bool(verbose)
         self.logger = logger_instance if logger_instance is not None else LOGGER
+        self._spectral_device_request = device
+        self._spectral_device_requested = str(device).lower()
+        self._spectral_device = None
+        self._spectral_device_reason = None
 
         device_edges, vertex_count = self._canonical_graph(
             adjacency=adjacency,
@@ -355,87 +428,359 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         )
 
     @staticmethod
-    def _scipy_spectral_embedding(edges, n_vertices, n_components, seed):
-        """Return the paper's deterministic normalized-Laplacian embedding."""
-        host_edges = np.asarray(edges)
-        rows = np.concatenate((host_edges[:, 0], host_edges[:, 1]))
-        columns = np.concatenate((host_edges[:, 1], host_edges[:, 0]))
-        adjacency = sp.csr_matrix(
-            (np.ones(rows.size, dtype=np.float64), (rows, columns)),
-            shape=(n_vertices, n_vertices),
-            dtype=np.float64,
-        )
-        adjacency.sort_indices()
-        laplacian = sp.csr_matrix(
-            sp_csgraph.laplacian(adjacency, normed=True), dtype=np.float64
-        )
-        laplacian.sort_indices()
+    def _torch_edge_tensor(edges, device):
+        """Move canonical edges to one Torch device without a CUDA host copy."""
+        if isinstance(edges, torch.Tensor):
+            edge_tensor = edges.detach().to(device=device, dtype=torch.int64)
+        elif cp is not None and isinstance(edges, cp.ndarray):
+            if device.type == "cuda":
+                edge_tensor = torch.utils.dlpack.from_dlpack(edges)
+                edge_tensor = edge_tensor.to(device=device, dtype=torch.int64)
+            else:
+                edge_tensor = torch.as_tensor(
+                    cp.asnumpy(edges), dtype=torch.int64, device=device
+                )
+        else:
+            edge_tensor = torch.as_tensor(
+                np.asarray(edges), dtype=torch.int64, device=device
+            )
+        return edge_tensor.contiguous()
 
-        eigen_count = n_components + 1
-        vertex_ids = np.arange(n_vertices, dtype=np.float64)
-        phase = np.float64(seed + 1) * SPECTRAL_PHASE_MULTIPLIER
-        initial_vector = np.sin(vertex_ids + np.float64(1.0) + phase) + np.cos(
-            (vertex_ids + np.float64(1.0)) * np.float64(1.5) + phase
+    @staticmethod
+    def _orient_tensor_columns(vectors):
+        column_ids = torch.arange(vectors.shape[1], device=vectors.device)
+        pivots = torch.argmax(torch.abs(vectors), dim=0)
+        pivot_values = vectors[pivots, column_ids]
+        signs = torch.where(
+            pivot_values < 0,
+            vectors.new_tensor(-1.0),
+            vectors.new_tensor(1.0),
         )
-        initial_norm = np.linalg.norm(initial_vector)
-        if not np.isfinite(initial_norm) or initial_norm <= FLOAT64_TINY:
-            raise FloatingPointError("spectral start vector is not finite and nonzero")
-        initial_vector /= initial_norm
-        krylov_dimension = min(n_vertices, max(2 * eigen_count + 1, 20))
-        eigenvalues, eigenvectors = sp_linalg.eigsh(
-            laplacian,
-            k=eigen_count,
-            which="SM",
-            v0=initial_vector,
-            ncv=krylov_dimension,
-            tol=SPECTRAL_TOLERANCE,
-            maxiter=SPECTRAL_MAX_ITERATIONS,
-        )
-        order = np.argsort(eigenvalues, kind="stable")
-        eigenvalues = eigenvalues[order]
-        eigenvectors = eigenvectors[:, order]
-        if not np.all(np.isfinite(eigenvalues)) or not np.all(
-            np.isfinite(eigenvectors)
-        ):
-            raise FloatingPointError("spectral solver returned non-finite values")
-        pivots = np.argmax(np.abs(eigenvectors), axis=0)
-        pivot_values = eigenvectors[pivots, np.arange(eigen_count)]
-        signs = np.where(pivot_values < 0, np.float64(-1.0), np.float64(1.0))
-        eigenvectors = eigenvectors * signs[None, :]
-        residual = laplacian @ eigenvectors - eigenvectors * eigenvalues[None, :]
-        denominator = np.maximum(
-            np.linalg.norm(eigenvectors, axis=0), FLOAT64_TINY
-        )
-        relative_residual = np.linalg.norm(residual, axis=0) / denominator
-        positions = np.ascontiguousarray(
-            eigenvectors[:, 1 : n_components + 1], dtype=np.float32
-        )
-        if positions.shape != (n_vertices, n_components):
-            raise RuntimeError("spectral solver returned an unexpected shape")
-        if not np.all(np.isfinite(relative_residual)) or not np.all(
-            np.isfinite(positions)
-        ):
-            raise FloatingPointError("spectral solver returned non-finite values")
-        if np.any(relative_residual > SPECTRAL_RESIDUAL_BOUND):
-            raise RuntimeError("spectral solver residual exceeds the accepted bound")
-        return (
-            positions,
-            eigenvalues.astype(float).tolist(),
-            float(np.max(relative_residual)),
-        )
+        return vectors * signs.unsqueeze(0)
 
-    def _spectral_initialization(self):
-        host_positions, eigenvalues, max_relative_residual = (
-            self._scipy_spectral_embedding(
-                cp.asnumpy(self.edges),
-                self.n,
-                self.n_components,
-                self.seed,
+    @staticmethod
+    def _tensor_sha256(tensor, numpy_dtype, chunk_rows=1 << 20):
+        """Hash a tensor's canonical little-endian evidence stream."""
+        digest = hashlib.sha256()
+        for begin in range(0, tensor.shape[0], chunk_rows):
+            host = (
+                tensor[begin : begin + chunk_rows]
+                .detach()
+                .contiguous()
+                .cpu()
+                .numpy()
+                .astype(numpy_dtype, copy=False)
+            )
+            digest.update(host.tobytes(order="C"))
+        return digest.hexdigest()
+
+    @staticmethod
+    def _torch_spectral_start(n_vertices, eigen_count, seed, device):
+        """Build a deterministic full-rank orthonormal Torch block."""
+        vertex_ids = torch.arange(
+            1, n_vertices + 1, dtype=torch.float64, device=device
+        ).unsqueeze(1)
+        column_ids = torch.arange(
+            1, eigen_count + 1, dtype=torch.float64, device=device
+        ).unsqueeze(0)
+        phase = (
+            float(seed + 1) * 0.6180339887498949
+            + column_ids * 1.4142135623730951
+        )
+        raw = torch.sin(vertex_ids * (column_ids + 0.5) + phase)
+        raw = raw + torch.cos(vertex_ids * (column_ids + 1.5) + phase)
+        start, factor = torch.linalg.qr(raw, mode="reduced")
+        diagonal = torch.abs(torch.diagonal(factor))
+        maximum = torch.max(diagonal)
+        rank_ratio = torch.min(diagonal) / torch.clamp(
+            maximum, min=torch.finfo(torch.float64).tiny
+        )
+        if not bool(torch.isfinite(rank_ratio).item()) or float(rank_ratio.item()) <= 1e-12:
+            raise FloatingPointError("spectral start block is not numerically full rank")
+        start = GraphEmbedder._orient_tensor_columns(start.contiguous())
+        identity = torch.eye(eigen_count, dtype=torch.float64, device=device)
+        orthogonality_error = torch.max(
+            torch.abs(start.mT @ start - identity)
+        )
+        if not bool(torch.isfinite(orthogonality_error).item()) or float(
+            orthogonality_error.item()
+        ) > float(SPECTRAL_ORTHOGONALITY_BOUND):
+            raise FloatingPointError(
+                "spectral start block failed the orthogonality gate"
+            )
+        return start, float(rank_ratio.item()), float(orthogonality_error.item())
+
+    @staticmethod
+    def _torch_subspace_repeat_metrics(reference, candidate):
+        """Measure numerical subspace drift without making it a runtime gate."""
+        if reference.ndim != 2 or candidate.ndim != 2:
+            raise ValueError("subspace samples must be matrices")
+        if tuple(reference.shape) != tuple(candidate.shape):
+            raise ValueError("subspace samples must have identical shapes")
+        device = reference.device
+        first = reference.to(device=device, dtype=torch.float64)
+        second = candidate.to(device=device, dtype=torch.float64)
+        first, _ = torch.linalg.qr(first, mode="reduced")
+        second, _ = torch.linalg.qr(second, mode="reduced")
+        singular_values = torch.linalg.svdvals(first.mT @ second).clamp(0.0, 1.0)
+        projector_frobenius = torch.sqrt(
+            torch.clamp(
+                2.0 * first.shape[1] - 2.0 * torch.sum(singular_values**2),
+                min=0.0,
             )
         )
-        self._spectral_eigenvalues = eigenvalues
-        self._spectral_max_relative_residual = max_relative_residual
-        return cp.ascontiguousarray(cp.asarray(host_positions, dtype=cp.float32))
+        largest_principal_angle = torch.acos(torch.min(singular_values))
+        return {
+            "projector_frobenius_distance": float(projector_frobenius.item()),
+            "largest_principal_angle_radians": float(
+                largest_principal_angle.item()
+            ),
+            "canonical_correlations": [
+                float(value) for value in singular_values.detach().cpu().tolist()
+            ],
+        }
+
+    @staticmethod
+    def _torch_spectral_embedding(
+        edges, n_vertices, n_components, seed, device="cuda"
+    ):  # pylint: disable=too-many-locals
+        """Compute one device-parameterized normalized-Laplacian embedding."""
+        resolved, requested, selection_reason = _resolve_spectral_device(device)
+        eigen_count = n_components + 1
+        if n_vertices < 3 * eigen_count:
+            raise ValueError(
+                "Torch LOBPCG requires n_vertices >= 3 * (n_components + 1)"
+            )
+
+        def synchronize():
+            if resolved.type == "cuda":
+                torch.cuda.synchronize(resolved)
+
+        timings = {}
+        total_started = time.perf_counter()
+        stage_started = time.perf_counter()
+        edge_tensor = GraphEmbedder._torch_edge_tensor(edges, resolved)
+        if edge_tensor.ndim != 2 or edge_tensor.shape[1] != 2:
+            raise ValueError("edges must have shape (n_edges, 2)")
+        source, target = edge_tensor[:, 0], edge_tensor[:, 1]
+        endpoints = edge_tensor.reshape(-1)
+        degrees = torch.bincount(endpoints, minlength=n_vertices).to(torch.float64)
+        positive_degree = degrees > 0
+        inverse_sqrt_degree = torch.zeros_like(degrees)
+        inverse_sqrt_degree[positive_degree] = torch.rsqrt(degrees[positive_degree])
+        weights = inverse_sqrt_degree[source] * inverse_sqrt_degree[target]
+        diagonal_ids = torch.arange(n_vertices, dtype=torch.int64, device=resolved)
+        rows = torch.cat((source, target, diagonal_ids))
+        columns = torch.cat((target, source, diagonal_ids))
+        diagonal = torch.where(
+            positive_degree,
+            degrees.new_tensor(2.0),
+            degrees.new_tensor(float(SPECTRAL_SHIFT)),
+        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Sparse invariant checks are implicitly disabled.*",
+                category=UserWarning,
+            )
+            shifted = torch.sparse_coo_tensor(
+                torch.stack((rows, columns)),
+                torch.cat((weights, weights, diagonal)),
+                size=(n_vertices, n_vertices),
+                dtype=torch.float64,
+                device=resolved,
+                check_invariants=False,
+            ).coalesce()
+        edge_tensor_sha256 = GraphEmbedder._tensor_sha256(edge_tensor, "<i8")
+        operator_receipt = (
+            "three-identity-minus-symmetric-normalized-laplacian|"
+            f"float64|{n_vertices}|{edge_tensor.shape[0]}|{edge_tensor_sha256}"
+        )
+        operator_sha256 = hashlib.sha256(operator_receipt.encode("utf-8")).hexdigest()
+        synchronize()
+        timings["operator_seconds"] = time.perf_counter() - stage_started
+
+        stage_started = time.perf_counter()
+        start, start_rank_ratio, start_orthogonality_error = (
+            GraphEmbedder._torch_spectral_start(
+                n_vertices, eigen_count, seed, resolved
+            )
+        )
+        start_sha256 = GraphEmbedder._tensor_sha256(start, "<f8")
+        synchronize()
+        timings["start_seconds"] = time.perf_counter() - stage_started
+
+        stage_started = time.perf_counter()
+        tracker_state = {"iterations": 0, "converged_count": 0}
+        def tracker(worker):
+            tracker_state["iterations"] = int(worker.ivars["istep"])
+            tracker_state["converged_count"] = int(
+                worker.ivars.get("converged_count", 0)
+            )
+
+        shifted_eigenvalues, eigenvectors = torch.lobpcg(
+            shifted,
+            k=eigen_count,
+            X=start,
+            niter=SPECTRAL_MAX_ITERATIONS,
+            tol=float(SPECTRAL_TOLERANCE),
+            largest=True,
+            method="ortho",
+            tracker=tracker,
+        )
+        solver = "torch.lobpcg"
+        synchronize()
+        timings["solver_seconds"] = time.perf_counter() - stage_started
+
+        stage_started = time.perf_counter()
+        eigenvalues = float(SPECTRAL_SHIFT) - shifted_eigenvalues
+        order = torch.argsort(eigenvalues, stable=True)
+        eigenvalues = eigenvalues[order]
+        eigenvectors = GraphEmbedder._orient_tensor_columns(
+            eigenvectors[:, order].contiguous()
+        )
+        if not bool(torch.isfinite(eigenvalues).all().item()) or not bool(
+            torch.isfinite(eigenvectors).all().item()
+        ):
+            raise FloatingPointError("spectral solver returned non-finite values")
+        laplacian_times_vectors = (
+            float(SPECTRAL_SHIFT) * eigenvectors
+            - torch.sparse.mm(shifted, eigenvectors)
+        )
+        residual = (
+            laplacian_times_vectors
+            - eigenvectors * eigenvalues.unsqueeze(0)
+        )
+        denominator = torch.clamp(
+            torch.linalg.vector_norm(eigenvectors, dim=0),
+            min=torch.finfo(torch.float64).tiny,
+        )
+        residual_norm_ratios = torch.linalg.vector_norm(residual, dim=0) / denominator
+        identity = torch.eye(eigen_count, dtype=torch.float64, device=resolved)
+        orthogonality_error = torch.max(
+            torch.abs(eigenvectors.mT @ eigenvectors - identity)
+        )
+        positions = eigenvectors[:, 1 : n_components + 1].to(torch.float32)
+        if tuple(positions.shape) != (n_vertices, n_components):
+            raise RuntimeError("spectral solver returned an unexpected shape")
+        if not bool(torch.isfinite(residual_norm_ratios).all().item()) or not bool(
+            torch.isfinite(positions).all().item()
+        ):
+            raise FloatingPointError("spectral solver returned non-finite values")
+        maximum_residual = float(torch.max(residual_norm_ratios).item())
+        maximum_orthogonality_error = float(orthogonality_error.item())
+        if maximum_residual > float(SPECTRAL_RESIDUAL_BOUND):
+            raise RuntimeError(
+                "spectral solver residual exceeds the accepted bound: "
+                f"{maximum_residual:.6e} > {float(SPECTRAL_RESIDUAL_BOUND):.6e}"
+            )
+        if maximum_orthogonality_error > float(SPECTRAL_ORTHOGONALITY_BOUND):
+            raise RuntimeError(
+                "spectral solver orthogonality error exceeds the accepted bound: "
+                f"{maximum_orthogonality_error:.6e} > "
+                f"{float(SPECTRAL_ORTHOGONALITY_BOUND):.6e}"
+            )
+        eigenvalues_sha256 = GraphEmbedder._tensor_sha256(eigenvalues, "<f8")
+        eigenvectors_sha256 = GraphEmbedder._tensor_sha256(eigenvectors, "<f8")
+        output_sha256 = GraphEmbedder._tensor_sha256(positions, "<f4")
+        synchronize()
+        timings["audit_seconds"] = time.perf_counter() - stage_started
+        timings["total_seconds"] = time.perf_counter() - total_started
+
+        eigenvalue_list = eigenvalues.detach().cpu().tolist()
+        gaps = [
+            float(eigenvalue_list[index + 1] - eigenvalue_list[index])
+            for index in range(len(eigenvalue_list) - 1)
+        ]
+        clusters = []
+        cluster_start = 0
+        for index, gap in enumerate(gaps):
+            if abs(gap) > float(SPECTRAL_CLUSTER_BOUND):
+                clusters.append([cluster_start, index + 1])
+                cluster_start = index + 1
+        clusters.append([cluster_start, len(eigenvalue_list)])
+        diagnostics = {
+            "backend": TORCH_SPECTRAL_BACKEND,
+            "torch_version": str(torch.__version__),
+            "torch_cuda_version": str(torch.version.cuda),
+            "device_requested": requested,
+            "device_selected": str(resolved),
+            "device_selection_reason": selection_reason,
+            "operator": "three-identity-minus-symmetric-normalized-laplacian",
+            "operator_shift": float(SPECTRAL_SHIFT),
+            "operator_eigenvalue_mapping": (
+                "normalized-laplacian-eigenvalue=three-minus-operator-eigenvalue"
+            ),
+            "operator_sha256": operator_sha256,
+            "operator_edge_tensor_sha256": edge_tensor_sha256,
+            "operator_nnz": int(shifted._nnz()),
+            "isolated_vertices": int(torch.sum(~positive_degree).item()),
+            "normalized_laplacian": (
+                "symmetric-normalized-isolate-diagonal-zero-float64-v1"
+            ),
+            "operator_dtype": "float64",
+            "solver": solver,
+            "method": "ortho",
+            "largest": True,
+            "eigenvector_count": eigen_count,
+            "tolerance": float(SPECTRAL_TOLERANCE),
+            "maximum_iterations": SPECTRAL_MAX_ITERATIONS,
+            "domain_requirement": (
+                "n_vertices>=3*(n_components+1); otherwise-fail-closed"
+            ),
+            "observed_iterations": tracker_state["iterations"],
+            "reported_converged_count": tracker_state["converged_count"],
+            "start_algorithm": SPECTRAL_START_ALGORITHM,
+            "start_formula": (
+                "sin((i+1)*(j+1+0.5)+phase_j)+"
+                "cos((i+1)*(j+1+1.5)+phase_j);"
+                "phase_j=(seed+1)*golden_ratio+(j+1)*sqrt(2);thin-qr"
+            ),
+            "start_sha256": start_sha256,
+            "start_rank_ratio": start_rank_ratio,
+            "start_orthogonality_error": start_orthogonality_error,
+            "eigenvalue_order": "normalized-laplacian-ascending-stable",
+            "sign_orientation": "lowest-argmax-absolute-pivot-nonnegative",
+            "eigenvalues": [float(value) for value in eigenvalue_list],
+            "eigenvalues_sha256": eigenvalues_sha256,
+            "eigenvectors_sha256": eigenvectors_sha256,
+            "output_float32_sha256": output_sha256,
+            "eigenpair_residual_norm_ratios": [
+                float(value) for value in residual_norm_ratios.detach().cpu().tolist()
+            ],
+            "residual_numerator": "l2-norm-of-Lv-minus-lambda-v",
+            "residual_denominator": "l2-norm-of-v",
+            "maximum_eigenpair_residual_norm_ratio": maximum_residual,
+            "orthogonality_error": maximum_orthogonality_error,
+            "residual_bound": float(SPECTRAL_RESIDUAL_BOUND),
+            "orthogonality_bound": float(SPECTRAL_ORTHOGONALITY_BOUND),
+            "cluster_gap_bound": float(SPECTRAL_CLUSTER_BOUND),
+            "eigenvalue_gaps": gaps,
+            "eigenvalue_clusters_half_open": clusters,
+            "timings": timings,
+        }
+        return positions.contiguous(), diagnostics
+
+    def _spectral_initialization(self):
+        positions, diagnostics = self._torch_spectral_embedding(
+            self.edges,
+            self.n,
+            self.n_components,
+            self.seed,
+            self._spectral_device_request,
+        )
+        self._spectral_diagnostics = diagnostics
+        self._spectral_device = torch.device(diagnostics["device_selected"])
+        self._spectral_device_reason = diagnostics["device_selection_reason"]
+        self._spectral_eigenvalues = diagnostics["eigenvalues"]
+        self._spectral_max_residual_norm_ratio = diagnostics[
+            "maximum_eigenpair_residual_norm_ratio"
+        ]
+        if positions.device.type == "cuda":
+            device_positions = cp.from_dlpack(positions.detach())
+        else:
+            device_positions = cp.asarray(positions.detach().cpu().numpy())
+        return cp.ascontiguousarray(device_positions, dtype=cp.float32)
 
     @staticmethod
     def _search_result_arrays(result):
@@ -896,6 +1241,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                 "n_neighbors": self.n_neighbors,
                 "sample_size": self.sample_size,
                 "seed": self.seed,
+                "device": self._spectral_device_requested,
             },
             "iterations": self._iteration,
             "timings": dict(self.timings),
@@ -921,31 +1267,14 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                 str(width): count
                 for width, count in sorted(self._midpoint_width_histogram.items())
             },
-            "spectral_initialization": "deterministic-scipy-eigsh-sm-float64-v1",
-            "spectral_solver": {
-                "implementation": "scipy.sparse.linalg.eigsh",
-                "laplacian_dtype": "float64",
-                "which": "SM",
-                "eigenvector_count": self.n_components + 1,
-                "krylov_dimension": min(
-                    self.n, max(2 * (self.n_components + 1) + 1, 20)
-                ),
-                "tolerance": float(SPECTRAL_TOLERANCE),
-                "maximum_iterations": SPECTRAL_MAX_ITERATIONS,
-                "start_vector": (
-                    "normalized-sin(i+1+phase)-plus-cos((i+1)*1.5+phase)-v1"
-                ),
-                "phase": float(
-                    np.float64(self.seed + 1) * SPECTRAL_PHASE_MULTIPLIER
-                ),
-                "eigenvalue_order": "ascending-stable",
-                "sign_orientation": "lowest-argmax-absolute-pivot-nonnegative",
-                "maximum_relative_residual": float(SPECTRAL_RESIDUAL_BOUND),
-            },
-            "normalized_laplacian": (
-                "scipy-symmetric-normalized-isolate-diagonal-zero-float64-v1"
-            ),
+            "spectral_initialization": TORCH_SPECTRAL_BACKEND,
+            "spectral_solver": dict(self._spectral_diagnostics),
+            "normalized_laplacian": self._spectral_diagnostics[
+                "normalized_laplacian"
+            ],
             "spectral_eigenvalues": list(self._spectral_eigenvalues),
-            "spectral_max_relative_residual": self._spectral_max_relative_residual,
+            "spectral_max_eigenpair_residual_norm_ratio": (
+                self._spectral_max_residual_norm_ratio
+            ),
             "score_orientation": "farthest-radius-first",
         }

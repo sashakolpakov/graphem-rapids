@@ -1,10 +1,11 @@
 Quick start
 ===========
 
-GraphEm requires CUDA 12, CuPy, cupyx, and cuVS.  It does not select a second
-implementation when a required component is unavailable.  Spectral
-initialization uses the paper's float64 CPU SciPy ``eigsh(SM)`` path; midpoint
-search and force refinement run on the GPU.
+GraphEm requires CUDA 12, Torch, CuPy, cupyx, and cuVS.  Production runs pin
+``device="cuda"`` and fail if CUDA is unavailable.  The same Torch spectral
+tensor function can be selected explicitly on CPU for correctness checks;
+that selection emits a ``RuntimeWarning``.  Midpoint search and force
+refinement run on the GPU.
 
 .. code-block:: python
 
@@ -20,6 +21,7 @@ search and force refinement run on the GPU.
        n_neighbors=15,
        sample_size=2_048,
        seed=0,
+       device="cuda",
    )
    embedder.run_layout(num_iterations=30)
    farthest = embedder.get_top_k(50)
