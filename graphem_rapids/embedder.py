@@ -36,40 +36,68 @@ LOGGER = logging.getLogger(__name__)
 EPSILON = np.float32(1.0e-6)
 
 
-_SPRING_KERNEL = r"""
+_DETERMINISTIC_FORCE_KERNELS = r"""
 #define DEFINE_SPRING_KERNEL(NAME, INDEX_TYPE)                                  \
 extern "C" __global__ void NAME(                                                \
-    const float* positions, const INDEX_TYPE* edges,                            \
-    const long long n_edges, const int n_components,                            \
+    const float* positions, const long long* row_offsets,                       \
+    const INDEX_TYPE* neighbors, const long long n_vertices,                    \
+    const int n_components,                                                     \
     const float preferred_length, const float attraction, float* forces)        \
 {                                                                                \
-    const long long edge_id =                                                    \
+    const long long vertex_id =                                                  \
         static_cast<long long>(blockDim.x) * blockIdx.x + threadIdx.x;           \
-    if (edge_id >= n_edges) return;                                              \
-    const long long source = static_cast<long long>(edges[2 * edge_id]);         \
-    const long long target = static_cast<long long>(edges[2 * edge_id + 1]);     \
-    const long long source_offset = source * n_components;                       \
-    const long long target_offset = target * n_components;                       \
-    float squared_norm = 0.0f;                                                   \
+    if (vertex_id >= n_vertices) return;                                          \
+    const long long vertex_offset = vertex_id * n_components;                    \
     for (int component = 0; component < n_components; ++component) {             \
-        const float delta = positions[target_offset + component]                 \
-            - positions[source_offset + component];                              \
-        squared_norm += delta * delta;                                            \
+        forces[vertex_offset + component] = 0.0f;                                \
     }                                                                             \
-    const float distance = sqrtf(squared_norm) + 1.0e-6f;                        \
-    const float multiplier = attraction * (distance - preferred_length)          \
-        / distance;                                                               \
-    for (int component = 0; component < n_components; ++component) {             \
-        const float delta = positions[target_offset + component]                 \
-            - positions[source_offset + component];                              \
-        const float force = multiplier * delta;                                  \
-        atomicAdd(&forces[source_offset + component], force);                     \
-        atomicAdd(&forces[target_offset + component], -force);                    \
+    const long long begin = static_cast<long long>(row_offsets[vertex_id]);       \
+    const long long end = static_cast<long long>(row_offsets[vertex_id + 1]);     \
+    for (long long offset = begin; offset < end; ++offset) {                      \
+        const long long neighbor = static_cast<long long>(neighbors[offset]);     \
+        const long long neighbor_offset = neighbor * n_components;               \
+        float squared_norm = 0.0f;                                                \
+        for (int component = 0; component < n_components; ++component) {         \
+            const float delta = positions[neighbor_offset + component]           \
+                - positions[vertex_offset + component];                           \
+            squared_norm += delta * delta;                                        \
+        }                                                                         \
+        const float distance = sqrtf(squared_norm) + 1.0e-6f;                    \
+        const float multiplier = attraction * (distance - preferred_length)      \
+            / distance;                                                           \
+        for (int component = 0; component < n_components; ++component) {         \
+            const float delta = positions[neighbor_offset + component]           \
+                - positions[vertex_offset + component];                           \
+            forces[vertex_offset + component] += multiplier * delta;             \
+        }                                                                         \
     }                                                                             \
 }
 
 DEFINE_SPRING_KERNEL(graphem_spring_i32, int)
 DEFINE_SPRING_KERNEL(graphem_spring_i64, long long)
+
+#define DEFINE_SEGMENT_KERNEL(NAME, INDEX_TYPE)                                 \
+extern "C" __global__ void NAME(                                                \
+    const float* contributions, const long long* starts,                        \
+    const long long* ends, const INDEX_TYPE* vertices,                          \
+    const long long n_segments, const int n_components, float* forces)          \
+{                                                                               \
+    const long long output_id =                                                 \
+        static_cast<long long>(blockDim.x) * blockIdx.x + threadIdx.x;          \
+    const long long output_count = n_segments * n_components;                   \
+    if (output_id >= output_count) return;                                      \
+    const long long segment = output_id / n_components;                         \
+    const int component = static_cast<int>(output_id % n_components);           \
+    float accumulated = 0.0f;                                                   \
+    for (long long row = starts[segment]; row < ends[segment]; ++row) {          \
+        accumulated += contributions[row * n_components + component];           \
+    }                                                                            \
+    const long long vertex = static_cast<long long>(vertices[segment]);          \
+    forces[vertex * n_components + component] = accumulated;                    \
+}
+
+DEFINE_SEGMENT_KERNEL(graphem_segment_i32, int)
+DEFINE_SEGMENT_KERNEL(graphem_segment_i64, long long)
 """
 
 
@@ -117,7 +145,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
     vertices use the same normalized-Laplacian convention as connected graphs.
     """
 
-    _spring_modules = {}
+    _force_modules = {}
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
@@ -180,6 +208,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
 
         self._adjacency = self._device_adjacency()
         self.degrees = cp.asarray(self._adjacency.sum(axis=1)).reshape(-1)
+        self._neighbor_offsets = cp.ascontiguousarray(
+            self._adjacency.indptr, dtype=cp.int64
+        )
+        self._neighbor_ids = cp.ascontiguousarray(self._adjacency.indices)
         self._midpoint_width_histogram = {}
 
         self.timings = {
@@ -274,11 +306,15 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         rows = cp.concatenate((source, target))
         columns = cp.concatenate((target, source))
         values = cp.ones(rows.shape[0], dtype=cp.float32)
-        return cpx_sparse.csr_matrix(
+        adjacency = cpx_sparse.csr_matrix(
             (values, (rows, columns)),
             shape=(self.n, self.n),
             dtype=cp.float32,
         )
+        adjacency.sort_indices()
+        if not adjacency.has_sorted_indices:
+            raise RuntimeError("canonical CSR neighbor rows are not sorted")
+        return adjacency
 
     @staticmethod
     def _uniform_query_edge_ids(n_edges, sample_size, seed):
@@ -515,21 +551,25 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
     def _spring_forces(self):
         forces = cp.zeros_like(self.positions)
         device_id = cp.cuda.Device().id
-        module = self._spring_modules.get(device_id)
+        module = self._force_modules.get(device_id)
         if module is None:
-            module = cp.RawModule(code=_SPRING_KERNEL, options=("--std=c++11",))
-            self._spring_modules[device_id] = module
-        suffix = "i32" if self.edges.dtype == cp.int32 else "i64"
+            module = cp.RawModule(
+                code=_DETERMINISTIC_FORCE_KERNELS,
+                options=("--std=c++11",),
+            )
+            self._force_modules[device_id] = module
+        suffix = "i32" if self._neighbor_ids.dtype == cp.int32 else "i64"
         kernel = module.get_function(f"graphem_spring_{suffix}")
         threads = 256
-        blocks = (self.n_edges + threads - 1) // threads
+        blocks = (self.n + threads - 1) // threads
         kernel(
             (blocks,),
             (threads,),
             (
                 self.positions,
-                self.edges,
-                np.int64(self.n_edges),
+                self._neighbor_offsets,
+                self._neighbor_ids,
+                np.int64(self.n),
                 np.int32(self.n_components),
                 np.float32(self.L_min),
                 np.float32(self.k_attr),
@@ -554,6 +594,66 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         first_opposed = ((o1 > 0) & (o2 < 0)) | ((o1 < 0) & (o2 > 0))
         second_opposed = ((o3 > 0) & (o4 < 0)) | ((o3 < 0) & (o4 > 0))
         return first_opposed & second_opposed
+
+    @staticmethod
+    def _ordered_endpoint_segments(endpoint_ids, contributions):
+        """Order endpoint contributions for deterministic sequential sums."""
+        endpoint_ids = cp.asarray(endpoint_ids)
+        contributions = cp.asarray(contributions, dtype=cp.float32)
+        if endpoint_ids.ndim != 1 or contributions.ndim != 2:
+            raise ValueError("endpoint contribution arrays have invalid rank")
+        if contributions.shape[0] != endpoint_ids.shape[0]:
+            raise ValueError("endpoint IDs and contributions must align")
+        if endpoint_ids.dtype.kind not in "iu":
+            raise TypeError("endpoint IDs must be integers")
+        if int(endpoint_ids.size) == 0:
+            raise ValueError("endpoint contribution arrays must not be empty")
+        contribution_ids = cp.arange(endpoint_ids.shape[0], dtype=cp.int64)
+        order = cp.lexsort(cp.stack((contribution_ids, endpoint_ids), axis=0))
+        ordered_ids = cp.ascontiguousarray(endpoint_ids[order])
+        ordered_contributions = cp.ascontiguousarray(contributions[order])
+        boundaries = cp.empty(ordered_ids.shape[0], dtype=cp.bool_)
+        boundaries[0] = True
+        boundaries[1:] = ordered_ids[1:] != ordered_ids[:-1]
+        starts = cp.flatnonzero(boundaries).astype(cp.int64, copy=False)
+        ends = cp.concatenate(
+            (starts[1:], cp.asarray([ordered_ids.shape[0]], dtype=cp.int64))
+        )
+        vertices = cp.ascontiguousarray(ordered_ids[starts])
+        return ordered_contributions, starts, ends, vertices
+
+    def _reduce_endpoint_contributions(self, endpoint_ids, contributions, forces):
+        ordered, starts, ends, vertices = self._ordered_endpoint_segments(
+            endpoint_ids, contributions
+        )
+        device_id = cp.cuda.Device().id
+        module = self._force_modules.get(device_id)
+        if module is None:
+            module = cp.RawModule(
+                code=_DETERMINISTIC_FORCE_KERNELS,
+                options=("--std=c++11",),
+            )
+            self._force_modules[device_id] = module
+        suffix = "i32" if vertices.dtype == cp.int32 else "i64"
+        kernel = module.get_function(f"graphem_segment_{suffix}")
+        segment_count = int(vertices.shape[0])
+        output_count = segment_count * self.n_components
+        threads = 256
+        blocks = (output_count + threads - 1) // threads
+        kernel(
+            (blocks,),
+            (threads,),
+            (
+                ordered,
+                starts,
+                ends,
+                vertices,
+                np.int64(segment_count),
+                np.int32(self.n_components),
+                forces,
+            ),
+        )
+        return forces
 
     def _intersection_forces(self, neighbor_edge_ids):
         forces = cp.zeros_like(self.positions)
@@ -593,11 +693,26 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             denominator = cp.linalg.norm(displacement, axis=1, keepdims=True) + EPSILON
             return np.float32(self.k_inter) * displacement / (denominator * denominator)
 
-        cp.add.at(forces, first_edges[:, 0], endpoint_force(p1))
-        cp.add.at(forces, first_edges[:, 1], endpoint_force(p2))
-        cp.add.at(forces, second_edges[:, 0], endpoint_force(q1))
-        cp.add.at(forces, second_edges[:, 1], endpoint_force(q2))
-        return forces
+        endpoint_ids = cp.concatenate(
+            (
+                first_edges[:, 0],
+                first_edges[:, 1],
+                second_edges[:, 0],
+                second_edges[:, 1],
+            )
+        )
+        contributions = cp.concatenate(
+            (
+                endpoint_force(p1),
+                endpoint_force(p2),
+                endpoint_force(q1),
+                endpoint_force(q2),
+            ),
+            axis=0,
+        )
+        return self._reduce_endpoint_contributions(
+            endpoint_ids, contributions, forces
+        )
 
     def update_positions(self):
         """Apply one complete spring, crossing, update, and normalization step."""

@@ -230,6 +230,19 @@ def test_all_coordinate_centroid_repulsion_matches_cpu_oracle(monkeypatch):
     embedder.sampled_edge_ids = np.array([0], dtype=np.int64)
     embedder.n_neighbors = 1
     embedder.k_inter = 0.5
+
+    def sequential_cpu_sum(endpoint_ids, contributions, forces):
+        ordered, starts, ends, vertices = GraphEmbedder._ordered_endpoint_segments(
+            endpoint_ids, contributions
+        )
+        for start, end, vertex in zip(starts, ends, vertices):
+            for row in range(int(start), int(end)):
+                forces[int(vertex)] += ordered[row]
+        return forces
+
+    monkeypatch.setattr(
+        embedder, "_reduce_endpoint_contributions", sequential_cpu_sum
+    )
     forces = embedder._intersection_forces(np.array([[1]], dtype=np.int64))
     centroid = embedder.positions.mean(axis=0)
     expected = np.empty_like(embedder.positions)
@@ -258,11 +271,29 @@ def test_population_axis_normalization_rejects_collapse(monkeypatch):
         GraphEmbedder._normalize_positions(positions)
 
 
-def test_spring_kernel_encodes_restoring_force_and_exact_epsilon_placement():
-    source = implementation._SPRING_KERNEL
+def test_ordered_endpoint_segments_are_vertex_then_contribution_stable(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    endpoint_ids = np.array([2, 1, 2, 0, 1], dtype=np.int32)
+    contributions = np.arange(10, dtype=np.float32).reshape(5, 2)
+    ordered, starts, ends, vertices = GraphEmbedder._ordered_endpoint_segments(
+        endpoint_ids, contributions
+    )
+    np.testing.assert_array_equal(vertices, np.array([0, 1, 2], dtype=np.int32))
+    np.testing.assert_array_equal(starts, np.array([0, 1, 3], dtype=np.int64))
+    np.testing.assert_array_equal(ends, np.array([1, 3, 5], dtype=np.int64))
+    np.testing.assert_array_equal(ordered, contributions[[3, 1, 4, 0, 2]])
+
+
+def test_force_kernels_are_sequential_and_preserve_exact_force_equations():
+    source = implementation._DETERMINISTIC_FORCE_KERNELS
     assert "sqrtf(squared_norm) + 1.0e-6f" in source
     assert "attraction * (distance - preferred_length)" in source
-    assert "direction" not in source
+    assert "row_offsets[vertex_id]" in source
+    assert "neighbors[offset]" in source
+    assert "starts[segment]" in source
+    assert "ends[segment]" in source
+    assert "atomicAdd" not in source
+    assert "cp.add.at" not in inspect.getsource(GraphEmbedder)
 
 
 def test_source_tree_contains_no_discarded_runtime_implementations():
