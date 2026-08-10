@@ -84,6 +84,8 @@ Failure and diagnostics
 
 Construction fails on a missing GPU dependency, invalid graph, unavailable
 requested CUDA device, nonconverged spectral solve, or failed numerical gate.
+Midpoint search also fails closed if cuVS repeats a global edge ID within one
+query row; this uniqueness check precedes negative-distance repair.
 ``get_diagnostics()`` records the requested and selected spectral devices,
 solver protocol, eigenvalues, residual, query-edge hashes, midpoint-search
 receipts, iteration count, and primitive timings.  The midpoint receipt includes
@@ -91,4 +93,5 @@ the configured/effective batch size, hard policy bound, search-call count,
 submitted batch-size histogram, call-width and resolved-query-width
 histograms, and the highest device-wide bytes observed at declared CUDA memory
 checkpoints.  Benchmark qualification also records an external GPU-memory
-high-water mark.
+high-water mark.  The receipt binds the rowwise unique-global-edge-ID
+validation policy used before negative-distance repair.

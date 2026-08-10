@@ -18,6 +18,9 @@
   smaller batch selection, and receipted search calls, submitted batch sizes,
   adaptive widths, and checkpointed device-memory high water without changing
   neighbor semantics.
+- Added a fail-closed rowwise uniqueness check for returned global edge IDs
+  before bounded negative-distance repair, with its policy recorded in
+  diagnostics.
 - Corrected the spring to restoring Hooke dynamics and retained strict xy
   crossings, all-coordinate centroid force, full updates, and per-coordinate
   population normalization.

@@ -58,6 +58,9 @@ TORCH_SPECTRAL_BACKEND = "torch-lobpcg-shifted-normalized-laplacian-v2"
 MIDPOINT_QUERY_BATCH_SIZE_BOUND = 64
 MIDPOINT_QUERY_BATCH_POLICY = "fixed-explicit-at-most-64-v1"
 MIDPOINT_MEMORY_OBSERVATION = "cuda-memgetinfo-search-checkpoints-v1"
+MIDPOINT_NEIGHBOR_ID_VALIDATION = (
+    "rowwise-unique-global-edge-id-before-negative-repair-v1"
+)
 
 
 _DETERMINISTIC_FORCE_KERNELS = r"""
@@ -852,6 +855,23 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         return distances, neighbors
 
     @staticmethod
+    def _validate_unique_global_neighbor_ids(neighbors):
+        """Fail if one cuVS query row repeats a global edge ID."""
+        neighbors = cp.asarray(neighbors)
+        if neighbors.ndim != 2:
+            raise ValueError("cuVS neighbor IDs must be a two-dimensional array")
+        if neighbors.dtype.kind not in "iu":
+            raise TypeError("cuVS neighbor IDs must be integers")
+        if neighbors.shape[1] < 2:
+            return
+        sorted_ids = cp.sort(neighbors, axis=1)
+        duplicate = bool(cp.any(sorted_ids[:, 1:] == sorted_ids[:, :-1]).item())
+        if duplicate:
+            raise ValueError(
+                "cuVS returned duplicate global edge IDs within a query row"
+            )
+
+    @staticmethod
     def _repair_negative_squared_distances(
         distances, neighbors, queries, reference_midpoints
     ):
@@ -1045,6 +1065,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                     raise ValueError(
                         "cuVS returned an ID outside the global edge namespace"
                     )
+                self._validate_unique_global_neighbor_ids(neighbors)
                 distances, repair_count = self._repair_negative_squared_distances(
                     distances, neighbors, query_subset, midpoints
                 )
@@ -1401,6 +1422,9 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             ),
             "midpoint_negative_distance_repair_count": (
                 self._midpoint_negative_distance_repairs
+            ),
+            "midpoint_neighbor_id_validation": (
+                MIDPOINT_NEIGHBOR_ID_VALIDATION
             ),
             "midpoint_query_batch_policy": MIDPOINT_QUERY_BATCH_POLICY,
             "midpoint_query_batch_size_bound": MIDPOINT_QUERY_BATCH_SIZE_BOUND,

@@ -36,8 +36,9 @@ For every run, GraphEm:
 5. recomputes every edge midpoint on every iteration and performs exact cuVS
    brute-force search against the complete midpoint array, submitting at most
    64 queries per call;
-6. removes self-neighbours by global edge identity and completes cutoff ties in
-   increasing global edge-ID order;
+6. rejects duplicate global edge IDs within each returned query row before
+   negative-distance repair, removes self-neighbours by global edge identity,
+   and completes cutoff ties in increasing global edge-ID order;
 7. applies restoring spring forces and strict crossing forces in the first two
    coordinates, with centroid repulsion in every embedding component;
 8. takes the full force step and normalizes each coordinate by its population
@@ -121,7 +122,9 @@ policy bound, every submitted batch-size count, the number of cuVS search
 calls, call-width and resolved-query-width histograms, and the highest
 device-wide allocation footprint observed at declared `cudaMemGetInfo`
 checkpoints. The checkpoint receipt is an in-process diagnostic; qualification
-artifacts still record an external GPU-memory high-water mark.
+artifacts still record an external GPU-memory high-water mark. The receipt also
+binds the rowwise unique-global-edge-ID validation policy that runs before any
+negative-distance repair.
 
 ## Reproduction policy
 

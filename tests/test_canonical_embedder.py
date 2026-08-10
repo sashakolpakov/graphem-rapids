@@ -283,6 +283,9 @@ def test_query_batch_diagnostics_receipt_the_executed_policy(monkeypatch):
     assert diagnostics["midpoint_query_batch_policy"].endswith("at-most-64-v1")
     assert diagnostics["midpoint_query_batch_size_bound"] == 64
     assert diagnostics["midpoint_query_batch_size_effective"] == 2
+    assert diagnostics["midpoint_neighbor_id_validation"] == (
+        "rowwise-unique-global-edge-id-before-negative-repair-v1"
+    )
     assert diagnostics["midpoint_search_call_count"] == 6
     assert diagnostics["midpoint_search_call_width_histogram"] == {
         "4": 3,
@@ -420,6 +423,95 @@ def test_midpoint_search_result_rejects_nonfinite_distance(monkeypatch):
     )
     with pytest.raises(FloatingPointError, match="non-finite"):
         GraphEmbedder._search_result_arrays(result)
+
+
+@pytest.mark.parametrize(
+    "neighbor_ids",
+    [
+        [[0, 1, 1, 2]],
+        [[0, 1, 2, 1]],
+        [[0, 1, 0, 2]],
+        [[0, 1, 2, 3], [4, 5, 4, 6]],
+    ],
+)
+def test_rowwise_neighbor_id_validation_rejects_any_duplicate_position(
+    monkeypatch, neighbor_ids
+):
+    monkeypatch.setattr(implementation, "cp", np)
+    with pytest.raises(ValueError, match="duplicate global edge IDs"):
+        GraphEmbedder._validate_unique_global_neighbor_ids(
+            np.asarray(neighbor_ids, dtype=np.int64)
+        )
+
+
+def test_rowwise_neighbor_id_validation_accepts_unique_rows(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    GraphEmbedder._validate_unique_global_neighbor_ids(
+        np.array([[3, 0, 2, 1], [7, 4, 6, 5]], dtype=np.int64)
+    )
+
+
+def test_duplicate_neighbor_ids_fail_before_negative_repair_and_keep_receipts(
+    monkeypatch,
+):
+    monkeypatch.setattr(implementation, "cp", np)
+
+    class DuplicateIdBruteForce:
+        """Return one malformed exact-search row with repeated edge ID 1."""
+
+        calls = []
+
+        @staticmethod
+        def build(midpoints, metric):
+            assert metric == "sqeuclidean"
+            return midpoints
+
+        @classmethod
+        def search(cls, _index, queries, width):
+            cls.calls.append((int(queries.shape[0]), int(width)))
+            assert width == 4
+            return (
+                np.array(
+                    [[-4.0e-7, -3.0e-7, -2.0e-7, 1.0]],
+                    dtype=np.float32,
+                ),
+                np.array([[0, 1, 1, 2]], dtype=np.int64),
+            )
+
+    monkeypatch.setattr(implementation, "brute_force", DuplicateIdBruteForce)
+    embedder = object.__new__(GraphEmbedder)
+    midpoints = np.array(
+        [
+            [1000.0, 1000.0],
+            [1001.0, 1000.0],
+            [1002.0, 1000.0],
+            [1003.0, 1000.0],
+        ],
+        dtype=np.float32,
+    )
+    embedder.positions = np.repeat(midpoints, 2, axis=0)
+    embedder.edges = np.arange(8, dtype=np.int64).reshape(4, 2)
+    embedder.sampled_edge_ids = np.array([0], dtype=np.int64)
+    embedder.sample_size = 1
+    embedder.n_edges = 4
+    embedder.n_neighbors = 2
+    embedder._midpoint_query_batch_size = 64
+    embedder._midpoint_width_histogram = {}
+    embedder._midpoint_negative_distance_repairs = 0
+    embedder._midpoint_search_call_count = 0
+    embedder._midpoint_search_call_width_histogram = {}
+    embedder._midpoint_query_batch_histogram = {}
+    embedder._midpoint_search_peak_device_bytes = None
+
+    with pytest.raises(ValueError, match="duplicate global edge IDs"):
+        embedder._midpoint_neighbors()
+
+    assert DuplicateIdBruteForce.calls == [(1, 4)]
+    assert embedder._midpoint_negative_distance_repairs == 0
+    assert embedder._midpoint_search_call_count == 1
+    assert embedder._midpoint_search_call_width_histogram == {4: 1}
+    assert embedder._midpoint_query_batch_histogram == {1: 1}
+    assert not embedder._midpoint_width_histogram
 
 
 def test_negative_repair_preserves_raw_boundary_completeness_proof(monkeypatch):
@@ -866,6 +958,17 @@ def test_source_uses_one_disconnected_graph_and_adaptive_tie_contract():
     assert "raw_search_boundary = distances[:, -1].copy()" in source
     assert "raw_search_boundary > cutoff" in source
     assert "search_width = min(self.n_edges, search_width * 2)" in source
+    midpoint_source = inspect.getsource(GraphEmbedder._midpoint_neighbors)
+    assert midpoint_source.index(
+        "outside the global edge namespace"
+    ) < midpoint_source.index(
+        "_validate_unique_global_neighbor_ids"
+    )
+    assert midpoint_source.index(
+        "_validate_unique_global_neighbor_ids"
+    ) < midpoint_source.index(
+        "_repair_negative_squared_distances"
+    )
 
 
 def test_source_tree_has_no_cpu_eigensolver_path():
