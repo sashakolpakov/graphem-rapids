@@ -14,6 +14,9 @@ import graphem_rapids.embedder as implementation
 from graphem_rapids.embedder import GraphEmbedder
 
 
+pytestmark = pytest.mark.fast
+
+
 def test_public_api_exposes_one_embedder():
     assert graphem_rapids.GraphEmbedder is GraphEmbedder
     assert "GraphEmbedder" in graphem_rapids.__all__

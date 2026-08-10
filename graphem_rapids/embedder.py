@@ -244,7 +244,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             vertex_count = _positive_integer("n_vertices", n_vertices)
 
         if vertex_count > int(np.iinfo(np.int32).max):
-            raise ValueError("vertex count exceeds the pinned connectivity implementation")
+            raise ValueError("vertex count exceeds the canonical global edge-ID range")
 
         if int(device_edges.shape[0]) == 0:
             raise ValueError("the canonical graph must contain edges")
