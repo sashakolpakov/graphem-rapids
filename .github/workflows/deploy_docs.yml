@@ -13,6 +13,25 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Set up Node for Markdown checks
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Lint Markdown
+      run: npx --yes markdownlint-cli2@0.23.2 "*.md"
+
+    - name: Check documentation links
+      uses: lycheeverse/lychee-action@v2
+      with:
+        fail: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: >-
+          --no-progress
+          --max-retries 3
+          --accept 200,204,206,429
+          README.md CONTRIBUTING.md CHANGELOG.md docs/*.rst
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -29,7 +48,7 @@ jobs:
     - name: Build documentation
       run: |
         cd docs
-        sphinx-build -b html . _build/html
+        sphinx-build -W --keep-going -n -b html . _build/html
 
     - name: Deploy to GitHub Pages
       if: github.ref == 'refs/heads/main'

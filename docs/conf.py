@@ -1,12 +1,13 @@
 # Configuration file for the Sphinx documentation builder.
 
-import os
+from pathlib import Path
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # -- Project information -----------------------------------------------------
 project = 'GraphEm Rapids'
-copyright = '2025, Alexander Kolpakov and Igor Rivin'
+copyright = '2026, Alexander Kolpakov and Igor Rivin'
 author = 'Alexander Kolpakov and Igor Rivin'
 release = '0.3.0.dev0'
 
@@ -21,9 +22,16 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+nitpicky = True
+nitpick_ignore = [
+    ('py:class', 'adjacency'),
+    ('py:class', 'degrees'),
+    ('py:class', 'logging.Logger'),
+]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
+html_title = 'GraphEm RAPIDS documentation'
 html_static_path = []
 
 # -- Extension configuration -------------------------------------------------
@@ -38,3 +46,6 @@ myst_enable_extensions = [
     "colon_fence",
     "deflist",
 ]
+
+linkcheck_timeout = 20
+linkcheck_retries = 2

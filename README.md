@@ -1,54 +1,71 @@
 # GraphEm RAPIDS
 
 GraphEm embeds an undirected graph in a low-dimensional Euclidean space and
-scores each vertex by its distance from the origin.  This repository contains
-one implementation of the corrected paper algorithm: a Torch tensor spectral
-start followed by CUDA/RAPIDS search and force refinement.
+scores each vertex by its distance from the origin. This repository exposes one
+canonical implementation: a Torch normalized-Laplacian initializer followed by
+CuPy/cuVS force refinement on CUDA.
 
-The spectral tensor function accepts a device, while production and benchmark
-runs pin ``device="cuda"``.  Explicit CPU selection and ``"auto"`` selection
-when CUDA is unavailable emit a ``RuntimeWarning``; a CUDA request never
-downgrades.  Construction fails when the required GPU stack, graph invariants,
-eigensolve, midpoint search, or numerical checks do not pass.
+## Execution contract
+
+`GraphEmbedder` always requires CuPy, cupyx, cuVS, and a working CUDA device for
+graph storage, midpoint search, forces, and layout updates. Its `device`
+argument selects the device used by the shared Torch spectral function:
+
+- `device="cuda"` is the default and the required production/benchmark mode;
+- an unavailable explicit CUDA request is an error and never downgrades;
+- explicit `device="cpu"` uses the same Torch tensor implementation and emits a
+  `RuntimeWarning`; and
+- `device="auto"` selects CUDA when available and otherwise selects CPU with a
+  `RuntimeWarning` and a recorded reason.
+
+CPU spectral selection is a small-fixture diagnostic, not a CPU layout backend.
+There is no second eigensolver or alternate layout implementation.
 
 ## Canonical algorithm
 
 For every run, GraphEm:
 
 1. validates one unweighted, undirected, loop-free, duplicate-free graph;
-2. computes a float64 normalized-Laplacian eigenspace with Torch LOBPCG on the
-   selected tensor device and drops the first eigenvector, using diagonal zero
-   for isolated vertices and diagonal one for vertices of positive degree;
-3. draws one deterministic uniform query-edge subset without replacement using
+2. builds the float64 symmetric normalized Laplacian with the declared isolate
+   convention and solves its shifted sparse eigenspace with
+   `torch.lobpcg(method="ortho")`;
+3. checks finite eigenpairs, residual norms, and orthogonality before dropping
+   the first eigenvector;
+4. draws one deterministic uniform query-edge subset without replacement using
    the recorded PCG64/Floyd recipe;
-4. on every iteration, recomputes all edge midpoints and performs exact cuVS
-   brute-force search against the full midpoint array;
-5. removes self-neighbours by global edge-ID equality and resolves equal
-   squared distances by increasing global edge ID after adaptive exact
-   overquery proves that the complete cutoff tie has been observed; negative
-   cuVS roundoff is accepted only after direct float32 recomputation satisfies
-   the recorded forward-error bound;
-6. applies restoring spring forces;
-7. detects strict crossings in the xy projection and applies the four-endpoint
-   centroid force in every embedding component;
-8. takes the full force step and normalizes every coordinate by its population
+5. recomputes every edge midpoint on every iteration and performs exact cuVS
+   brute-force search against the complete midpoint array;
+6. removes self-neighbours by global edge identity and completes cutoff ties in
+   increasing global edge-ID order;
+7. applies restoring spring forces and strict crossing forces in the first two
+   coordinates, with centroid repulsion in every embedding component;
+8. takes the full force step and normalizes each coordinate by its population
    standard deviation; and
-9. ranks vertices by decreasing Euclidean radius.
+9. ranks vertices by decreasing Euclidean radius, breaking score ties by vertex
+   ID.
 
-Both force systems are mandatory.  There is no learning-rate multiplier,
+Both force systems are mandatory. There is no learning-rate multiplier,
 displacement clipping, initial edge-length rescaling, approximate midpoint
-index, cached neighbour set, alternate score orientation, or second embedder.
+index, cached neighbour set, alternate score orientation, or alternate execution
+path.
 
 ## Installation
 
-The package requires a CUDA 12 environment with Torch, CuPy, and cuVS.
-The pinned 26.06 runtime also requires Python 3.11 or newer.  Disconnected
-graphs and isolated vertices use the same normalized-Laplacian and force
-rules; vertices without incident edges simply receive no edge force.
+The canonical qualified environment uses Python 3.11, CUDA 12.9, Torch 2.11,
+CuPy 14.1.1, and cuVS 26.06. Install the CUDA-matched Torch wheel before the
+package so dependency resolution does not select a different CUDA runtime:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
 python -m pip install -e .
 ```
+
+Any proposed dependency update must pass the same graph, finiteness, spectral
+residual, and orthogonality gates before it is treated as supported. Production
+claims must record the exact source, image, dependency, CUDA, and GPU identities.
 
 ## Usage
 
@@ -72,6 +89,7 @@ embedder.run_layout(num_iterations=30)
 positions = embedder.get_positions()
 scores = embedder.get_scores()
 farthest_vertices = embedder.get_top_k(50)
+diagnostics = embedder.get_diagnostics()
 ```
 
 The edge-list interface is explicit:
@@ -81,43 +99,40 @@ embedder = gr.GraphEmbedder(
     edges=edge_array,
     n_vertices=vertex_count,
     n_components=3,
+    n_neighbors=15,
+    sample_size=2_048,
+    device="cuda",
 )
 ```
 
-Exactly one of `adjacency` and `edges` is accepted.
+Exactly one of `adjacency` and `edges` is accepted. An edge list must use
+integer vertex IDs in `[0, n_vertices)`. For either input form,
+`sample_size <= n_edges`, `n_neighbors < n_edges`, and
+`n_vertices >= 3 * (n_components + 1)` must hold.
 
-## Reproduction gates
+## Reproduction policy
 
-The corrected implementation is accepted in this order:
+The primary golden and scaling matrices are untuned. Their graph preprocessing,
+dimensions, force parameters, query sizes, iteration counts, and seeds are
+frozen before result inspection. Each cell emits an immutable success or typed
+failure record with raw artifacts and checksums; any cell can later be replaced
+by a new linked attempt without changing unrelated cells.
 
-1. CPU mathematical oracles and global-ID fixtures;
-2. literal reproduction of the archived TPU/JOSS measurements;
-3. corrected-ID and restoring-spring quality cells on Delaunay and ER graphs;
-4. GPU parity on small fixed graphs;
-5. the fixed golden paper matrix;
-6. a predeclared scale ladder; and
-7. independent-cascade and Ripples/IMM comparisons.
+Tuning and graph discovery begin only after the untuned baseline is sealed.
+They use disjoint cell identities, retain the paired baseline, and are reported
+as post-hoc until a separate confirmation set supports a default-performance
+claim. Normal floating-point drift is measured with residual, orthogonality,
+eigenvalue, and subspace diagnostics; byte equality is provenance, not a
+numerical acceptance gate.
 
-Each benchmark records its dependency and runtime environment.  Supported
-dependency releases must pass the same finiteness and spectral residual gates;
-byte equality is measured for provenance but is not an acceptance gate.
+Comparator, influence, and scaling failures remain typed outcomes. A failed
+method is not replaced, omitted, or reported with another method's values.
 
-Scaling evidence is not accepted when the golden matrix fails.  Every method
-emits its own success or typed failure record.  A failed comparator is never
-replaced, omitted, or reported using another method's values.
+## Issue lineage
 
-The new manuscript will live with a separate checksum-verifying reproduction
-suite.  Its tables, figures, result macros, and recomputation ledger will be
-generated only from downloaded and verified result bundles.
-
-## Confirmed midpoint-ID defects
-
-- [graphem issue #7](https://github.com/sashakolpakov/graphem/issues/7)
-- [graphem-rapids issue #6](https://github.com/sashakolpakov/graphem-rapids/issues/6)
-
-The controlled repair retains the strong paper signal: at five iterations the
-corrected ER-1000 cell has Spearman rho 0.9017 against degree and 0.9063 against
-PageRank.  The corrected Delaunay cell improves to 0.8105 and 0.7995.
+- [Torch/CUDA spectral initializer issue #9](https://github.com/sashakolpakov/graphem/issues/9)
+- [Global midpoint-ID issue #6](https://github.com/sashakolpakov/graphem-rapids/issues/6)
+- [Original GraphEm midpoint-ID issue #7](https://github.com/sashakolpakov/graphem/issues/7)
 
 ## Development checks
 
@@ -125,13 +140,16 @@ PageRank.  The corrected Delaunay cell improves to 0.8105 and 0.7995.
 python -m pytest -q
 python -m pylint graphem_rapids tests
 python -m py_compile graphem_rapids/embedder.py
+sphinx-build -W --keep-going -n -b html docs /tmp/graphem-docs
+npx --yes markdownlint-cli2@0.23.2 "*.md"
 ```
 
-GPU claims require the separately sealed reproduction bundle; passing CPU
-tests alone is not a performance or scientific result.
+GPU claims require a separately sealed GPU qualification artifact. Local import,
+documentation, and small-fixture checks are not performance or scientific
+results.
 
 ## Citation
 
 The historical paper is [Fast Geometric Embedding for Node Influence
-Maximization](https://arxiv.org/abs/2506.07435).  Revised citation metadata will
+Maximization](https://arxiv.org/abs/2506.07435). Revised citation metadata will
 be published with the rewritten manuscript and verified result bundle.
