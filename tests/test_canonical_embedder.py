@@ -40,7 +40,7 @@ def test_missing_gpu_stack_is_an_explicit_error(monkeypatch):
     marker = ImportError("missing test dependency")
     monkeypatch.setattr(implementation, "_GPU_IMPORT_ERROR", marker)
     with pytest.raises(
-        ImportError, match="requires CuPy, cupyx, pylibcugraph, and cuVS"
+        ImportError, match="requires CuPy, cupyx, and cuVS"
     ):
         GraphEmbedder(np.eye(4, dtype=np.float32))
 
@@ -76,14 +76,76 @@ def test_identity_based_self_removal_fails_when_row_is_short(monkeypatch):
         )
 
 
-def test_midpoint_cutoff_tie_fails_closed(monkeypatch):
+def test_midpoint_cutoff_tie_uses_global_edge_id(monkeypatch):
     monkeypatch.setattr(implementation, "cp", np)
     raw = np.array([[4, 1, 2, 3, 5]], dtype=np.int64)
     distances = np.array([[0.0, 0.1, 0.2, 0.2, 0.4]], dtype=np.float32)
-    with pytest.raises(RuntimeError, match="ambiguous at the distance cutoff"):
-        GraphEmbedder._compact_nonself_neighbors(
-            raw, distances, np.array([4], dtype=np.int64), 2
-        )
+    actual = GraphEmbedder._compact_nonself_neighbors(
+        raw, distances, np.array([4], dtype=np.int64), 2
+    )
+    np.testing.assert_array_equal(actual, np.array([[1, 2]], dtype=np.int64))
+
+
+def test_batched_midpoint_order_is_distance_then_global_id(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    raw = np.array([[9, 4, 3, 1, 2], [8, 7, 6, 2, 5]], dtype=np.int64)
+    distances = np.array(
+        [[0.2, 0.0, 0.1, 0.1, 0.1], [0.0, 0.3, 0.2, 0.2, 0.1]],
+        dtype=np.float32,
+    )
+    actual = GraphEmbedder._compact_nonself_neighbors(
+        raw, distances, np.array([4, 8], dtype=np.int64), 3
+    )
+    np.testing.assert_array_equal(
+        actual,
+        np.array([[1, 2, 3], [5, 2, 6]], dtype=np.int64),
+    )
+
+
+def test_midpoint_search_doubles_until_full_cutoff_tie_is_observed(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+
+    class FakeBruteForce:
+        """Deterministic cuVS stand-in that exposes the queried widths."""
+
+        widths = []
+
+        @staticmethod
+        def build(midpoints, metric):
+            assert metric == "sqeuclidean"
+            return midpoints
+
+        @classmethod
+        def search(cls, _index, _queries, width):
+            cls.widths.append(width)
+            if width == 4:
+                return (
+                    np.array([[0.0, 0.2, 0.2, 0.2]], dtype=np.float32),
+                    np.array([[4, 5, 3, 2]], dtype=np.int64),
+                )
+            assert width == 6
+            return (
+                np.array([[0.0, 0.2, 0.2, 0.2, 0.2, 0.2]], dtype=np.float32),
+                np.array([[4, 5, 3, 2, 1, 0]], dtype=np.int64),
+            )
+
+    monkeypatch.setattr(implementation, "brute_force", FakeBruteForce)
+    embedder = object.__new__(GraphEmbedder)
+    embedder.positions = np.arange(14, dtype=np.float32).reshape(7, 2)
+    embedder.edges = np.array(
+        [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]], dtype=np.int64
+    )
+    embedder.sampled_edge_ids = np.array([4], dtype=np.int64)
+    embedder.sample_size = 1
+    embedder.n_edges = 6
+    embedder.n_neighbors = 2
+    embedder._midpoint_width_histogram = {}
+
+    actual = embedder._midpoint_neighbors()
+
+    np.testing.assert_array_equal(actual, np.array([[0, 1]], dtype=np.int64))
+    assert FakeBruteForce.widths == [4, 6]
+    assert embedder._midpoint_width_histogram == {6: 1}
 
 
 def test_query_edge_sampling_is_uniform_without_replacement():
@@ -210,11 +272,30 @@ def test_source_tree_contains_no_discarded_runtime_implementations():
     assert "force_mode" not in tracked_python
 
 
-def test_source_requires_structural_connectivity_and_cutoff_tie_checks():
+def test_source_uses_one_disconnected_graph_and_adaptive_tie_contract():
     source = inspect.getsource(GraphEmbedder)
-    assert "cpx_csgraph.connected_components" in source
-    assert "component_count != 1" in source
-    assert "midpoint-neighbor membership is ambiguous" in source
+    assert "connected_components" not in source
+    assert "must not contain isolated vertices" not in source
+    assert "cpx_linalg.lobpcg" in source
+    assert "cpx_linalg.eigsh" not in source
+    assert "positive_degree.astype(cp.float32)" in source
+    assert "distances[:, -1] > cutoff" in source
+    assert "search_width = min(self.n_edges, search_width * 2)" in source
+
+
+def test_host_adjacency_preserves_an_isolated_vertex():
+    adjacency = sp.csr_matrix(
+        np.array(
+            [
+                [0, 1, 0],
+                [1, 0, 0],
+                [0, 0, 0],
+            ],
+            dtype=np.float32,
+        )
+    )
+    observed = GraphEmbedder._validate_host_adjacency(adjacency)
+    np.testing.assert_array_equal(observed.toarray(), adjacency.toarray())
 
 
 def test_source_uses_cupy14_lexsort_contract_and_imports_cuvs_first():

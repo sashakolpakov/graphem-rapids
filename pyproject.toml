@@ -40,7 +40,6 @@ requires-python = ">=3.11"
 dependencies = [
     "cuvs-cu12>=26.6,<26.7",
     "cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0,<15",
-    "pylibcugraph-cu12>=26.6,<26.7",
     "numpy>=1.21.0",
     "matplotlib>=3.5.0",
     "networkx>=2.6.0",

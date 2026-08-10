@@ -1,9 +1,9 @@
 """Canonical GPU implementation of GraphEm.
 
 The module intentionally exposes one algorithm.  It follows the executed
-paper protocol where that protocol is well-defined, while applying the two
-confirmed correctness repairs: restoring spring dynamics and global edge IDs
-for midpoint neighbours.
+paper protocol where that protocol is well-defined, while applying confirmed
+correctness repairs to spring dynamics, spectral initialization, and global
+edge identities for midpoint neighbours.
 """
 
 from __future__ import annotations
@@ -21,12 +21,10 @@ try:  # Imports remain lazy so documentation and CPU contract tests can import.
     from cuvs.neighbors import brute_force
     import cupy as cp
     import cupyx.scipy.sparse as cpx_sparse
-    import cupyx.scipy.sparse.csgraph as cpx_csgraph
     import cupyx.scipy.sparse.linalg as cpx_linalg
 except ImportError as gpu_import_error:  # pragma: no cover - host dependent
     cp = None
     cpx_sparse = None
-    cpx_csgraph = None
     cpx_linalg = None
     brute_force = None
     _GPU_IMPORT_ERROR = gpu_import_error
@@ -78,7 +76,7 @@ DEFINE_SPRING_KERNEL(graphem_spring_i64, long long)
 def _require_gpu() -> None:
     if _GPU_IMPORT_ERROR is not None:
         raise ImportError(
-            "GraphEm requires CuPy, cupyx, pylibcugraph, and cuVS; the "
+            "GraphEm requires CuPy, cupyx, and cuVS; the "
             "canonical GPU implementation cannot start without them"
         ) from _GPU_IMPORT_ERROR
 
@@ -114,8 +112,9 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
     """Embed one undirected simple graph with the canonical GraphEm dynamics.
 
     Exactly one of ``adjacency`` or ``edges`` must be supplied.  The graph must
-    be loop-free, duplicate-free, contain no isolated vertices, and be large
-    enough for the requested eigenspace and midpoint neighbourhood.
+    be loop-free, duplicate-free, and large enough for the requested block
+    eigenspace and midpoint neighbourhood.  Disconnected graphs and isolated
+    vertices use the same normalized-Laplacian convention as connected graphs.
     """
 
     _spring_modules = {}
@@ -167,8 +166,11 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         self.edges = device_edges
         self.n = vertex_count
         self.n_edges = int(device_edges.shape[0])
-        if self.n < self.n_components + 4:
-            raise ValueError("graph is too small for the requested spectral embedding")
+        block_width = self.n_components + 1
+        if self.n <= 5 * block_width:
+            raise ValueError(
+                "graph is too small for the requested block spectral embedding"
+            )
         if self.n_edges <= self.n_neighbors:
             raise ValueError("n_neighbors must be smaller than the edge count")
         if requested_sample_size > self.n_edges:
@@ -178,17 +180,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
 
         self._adjacency = self._device_adjacency()
         self.degrees = cp.asarray(self._adjacency.sum(axis=1)).reshape(-1)
-        if bool(cp.any(self.degrees <= 0).item()):
-            raise ValueError("the canonical graph must not contain isolated vertices")
-        component_count = int(
-            cpx_csgraph.connected_components(
-                self._adjacency,
-                directed=False,
-                return_labels=False,
-            )
-        )
-        if component_count != 1:
-            raise ValueError("the canonical graph must be connected")
+        self._midpoint_width_histogram = {}
 
         self.timings = {
             "initialization_seconds": 0.0,
@@ -320,31 +312,48 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         )
 
     def _spectral_initialization(self):
-        degree_inverse_sqrt = cp.reciprocal(cp.sqrt(self.degrees)).astype(cp.float32)
+        positive_degree = self.degrees > 0
+        degree_inverse_sqrt = cp.zeros_like(self.degrees, dtype=cp.float32)
+        degree_inverse_sqrt[positive_degree] = cp.reciprocal(
+            cp.sqrt(self.degrees[positive_degree])
+        ).astype(cp.float32)
         normalized = self._adjacency.multiply(degree_inverse_sqrt[:, None])
         normalized = normalized.multiply(degree_inverse_sqrt[None, :])
-        laplacian = cpx_sparse.eye(self.n, dtype=cp.float32, format="csr") - normalized
-        vertex_ids = cp.arange(self.n, dtype=cp.float32)
-        phase = np.float32((self.seed + 1) * 0.6180339887498949)
-        initial_vector = cp.sin(vertex_ids + phase) + cp.cos(
-            vertex_ids * np.float32(0.5) + phase
+        active_diagonal = cpx_sparse.diags(
+            positive_degree.astype(cp.float32),
+            offsets=0,
+            shape=(self.n, self.n),
+            format="csr",
         )
-        initial_vector /= cp.linalg.norm(initial_vector)
+        laplacian = active_diagonal - normalized
+
         eigen_count = self.n_components + 1
-        krylov_dimension = min(self.n - 1, max(2 * eigen_count + 1, 20))
-        if not eigen_count + 1 < krylov_dimension < self.n:
-            raise ValueError("graph dimensions do not admit a valid eigensolver subspace")
-        eigenvalues, eigenvectors = cpx_linalg.eigsh(
+        vertex_ids = cp.arange(self.n, dtype=cp.float32)[:, None]
+        column_ids = cp.arange(1, eigen_count + 1, dtype=cp.float32)[None, :]
+        phase = np.float32((self.seed + 1) * 0.6180339887498949)
+        initial_block = cp.sin(
+            (vertex_ids + np.float32(1.0)) * column_ids + phase
+        ) + cp.cos(
+            (vertex_ids + np.float32(1.0))
+            * (column_ids + np.float32(0.5))
+            + phase
+        )
+        initial_block, _ = cp.linalg.qr(initial_block, mode="reduced")
+        initial_block = cp.ascontiguousarray(initial_block, dtype=cp.float32)
+        eigenvalues, eigenvectors = cpx_linalg.lobpcg(
             laplacian,
-            k=eigen_count,
-            which="SA",
-            v0=initial_vector,
-            ncv=krylov_dimension,
-            tol=1.0e-6,
+            initial_block,
+            largest=False,
+            tol=1.0e-4,
+            maxiter=500,
         )
         order = cp.argsort(eigenvalues)
         eigenvalues = eigenvalues[order]
         eigenvectors = eigenvectors[:, order]
+        pivots = cp.argmax(cp.abs(eigenvectors), axis=0)
+        pivot_values = eigenvectors[pivots, cp.arange(eigen_count)]
+        signs = cp.where(pivot_values < 0, np.float32(-1.0), np.float32(1.0))
+        eigenvectors = eigenvectors * signs[None, :]
         positions = cp.ascontiguousarray(
             eigenvectors[:, 1 : self.n_components + 1], dtype=cp.float32
         )
@@ -359,6 +368,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         relative_residual = cp.linalg.norm(residual, axis=0) / denominator
         if bool(cp.any(relative_residual > np.float32(5.0e-4)).item()):
             raise RuntimeError("spectral solver residual exceeds the accepted bound")
+        self._spectral_eigenvalues = cp.asnumpy(eigenvalues).astype(float).tolist()
+        self._spectral_max_relative_residual = float(
+            cp.max(relative_residual).item()
+        )
         return positions
 
     @staticmethod
@@ -383,7 +396,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         return distances, neighbors
 
     @staticmethod
-    def _compact_nonself_neighbors(neighbors, distances, query_edge_ids, count):
+    def _lexicographic_nonself_candidates(neighbors, distances, query_edge_ids):
         neighbors = cp.asarray(neighbors)
         distances = cp.asarray(distances)
         query_edge_ids = cp.asarray(query_edge_ids)
@@ -395,24 +408,43 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             raise TypeError("neighbor and query IDs must be integers")
         usable = neighbors != query_edge_ids[:, None]
         usable_counts = cp.sum(usable, axis=1)
+        distance_keys = cp.where(usable, distances, cp.inf)
+        id_keys = cp.where(usable, neighbors, cp.iinfo(neighbors.dtype).max)
+        row_keys = cp.repeat(
+            cp.arange(neighbors.shape[0], dtype=cp.int64), neighbors.shape[1]
+        )
+        flat_order = cp.lexsort(
+            cp.stack(
+                (
+                    id_keys.reshape(-1),
+                    distance_keys.reshape(-1),
+                    row_keys,
+                ),
+                axis=0,
+            )
+        )
+        ordered_rows = row_keys[flat_order].reshape(neighbors.shape)
+        expected_rows = cp.arange(neighbors.shape[0], dtype=cp.int64)[:, None]
+        if bool(cp.any(ordered_rows != expected_rows).item()):
+            raise RuntimeError("batched midpoint ordering mixed query rows")
+        column_order = (flat_order % neighbors.shape[1]).reshape(neighbors.shape)
+        ordered_neighbors = cp.take_along_axis(neighbors, column_order, axis=1)
+        ordered_distances = cp.take_along_axis(distance_keys, column_order, axis=1)
+        return ordered_neighbors, ordered_distances, usable_counts
+
+    @staticmethod
+    def _compact_nonself_neighbors(neighbors, distances, query_edge_ids, count):
+        ordered_neighbors, _, usable_counts = (
+            GraphEmbedder._lexicographic_nonself_candidates(
+                neighbors, distances, query_edge_ids
+            )
+        )
         if bool(cp.any(usable_counts < count).item()):
             raise RuntimeError("cuVS returned fewer than the required non-self neighbors")
-        source_columns = cp.broadcast_to(
-            cp.arange(neighbors.shape[1], dtype=cp.int32), neighbors.shape
-        )
-        ranked_columns = cp.where(usable, source_columns, neighbors.shape[1])
-        order = cp.argsort(ranked_columns, axis=1)
-        compacted = cp.take_along_axis(neighbors, order, axis=1)[:, :count]
-        ordered_distances = cp.take_along_axis(distances, order, axis=1)
+        compacted = ordered_neighbors[:, :count]
+        query_edge_ids = cp.asarray(query_edge_ids)
         if bool(cp.any(compacted == query_edge_ids[:, None]).item()):
             raise RuntimeError("self neighbor survived identity-based removal")
-        if distances.shape[1] > count:
-            has_competitor = usable_counts > count
-            tied_cutoff = ordered_distances[:, count] == ordered_distances[:, count - 1]
-            if bool(cp.any(has_competitor & tied_cutoff).item()):
-                raise RuntimeError(
-                    "midpoint-neighbor membership is ambiguous at the distance cutoff"
-                )
         return compacted
 
     def _midpoint_neighbors(self):
@@ -424,23 +456,61 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         queries = cp.ascontiguousarray(midpoints[self.sampled_edge_ids])
         index = brute_force.build(midpoints, metric="sqeuclidean")
         search_width = min(self.n_edges, self.n_neighbors + 2)
-        result = brute_force.search(index, queries, search_width)
-        distances, neighbors = self._search_result_arrays(result)
-        expected_shape = (self.sample_size, search_width)
-        if neighbors.shape != expected_shape:
-            raise ValueError(
-                f"cuVS returned neighbor shape {neighbors.shape}, expected {expected_shape}"
-            )
-        if bool(cp.any(neighbors < 0).item()) or bool(
-            cp.any(neighbors >= self.n_edges).item()
-        ):
-            raise ValueError("cuVS returned an ID outside the global edge namespace")
-        return self._compact_nonself_neighbors(
-            neighbors,
-            distances,
-            self.sampled_edge_ids,
-            self.n_neighbors,
+        unresolved = cp.arange(self.sample_size, dtype=cp.int64)
+        resolved = cp.empty(
+            (self.sample_size, self.n_neighbors), dtype=cp.int64
         )
+        while int(unresolved.size):
+            result = brute_force.search(index, queries[unresolved], search_width)
+            distances, neighbors = self._search_result_arrays(result)
+            expected_shape = (int(unresolved.size), search_width)
+            if neighbors.shape != expected_shape:
+                raise ValueError(
+                    f"cuVS returned neighbor shape {neighbors.shape}, "
+                    f"expected {expected_shape}"
+                )
+            if bool(cp.any(neighbors < 0).item()) or bool(
+                cp.any(neighbors >= self.n_edges).item()
+            ):
+                raise ValueError("cuVS returned an ID outside the global edge namespace")
+
+            query_edge_ids = self.sampled_edge_ids[unresolved]
+            ordered_neighbors, ordered_distances, usable_counts = (
+                self._lexicographic_nonself_candidates(
+                    neighbors, distances, query_edge_ids
+                )
+            )
+            if bool(cp.any(usable_counts < self.n_neighbors).item()):
+                raise RuntimeError(
+                    "cuVS returned fewer than the required non-self neighbors"
+                )
+            selected = ordered_neighbors[:, : self.n_neighbors]
+            cutoff = ordered_distances[:, self.n_neighbors - 1]
+            if search_width == self.n_edges:
+                complete = cp.ones(unresolved.shape, dtype=cp.bool_)
+            else:
+                complete = distances[:, -1] > cutoff
+            completed_count = int(cp.sum(complete).item())
+            if completed_count:
+                completed_rows = unresolved[complete]
+                resolved[completed_rows] = selected[complete].astype(
+                    cp.int64, copy=False
+                )
+                self._midpoint_width_histogram[search_width] = (
+                    self._midpoint_width_histogram.get(search_width, 0)
+                    + completed_count
+                )
+            unresolved = unresolved[~complete]
+            if int(unresolved.size):
+                if search_width == self.n_edges:
+                    raise RuntimeError(
+                        "full midpoint reference did not resolve every query"
+                    )
+                search_width = min(self.n_edges, search_width * 2)
+
+        if bool(cp.any(resolved == self.sampled_edge_ids[:, None]).item()):
+            raise RuntimeError("self neighbor survived identity-based removal")
+        return resolved
 
     def _spring_forces(self):
         forces = cp.zeros_like(self.positions)
@@ -617,7 +687,11 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         )
         return {
             "algorithm": "graphem-canonical",
-            "graph": {"vertices": self.n, "edges": self.n_edges},
+            "graph": {
+                "vertices": self.n,
+                "edges": self.n_edges,
+                "isolated_vertices": int(cp.sum(self.degrees == 0).item()),
+            },
             "configuration": {
                 "n_components": self.n_components,
                 "L_min": self.L_min,
@@ -638,5 +712,18 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                 query_edges.tobytes(order="C")
             ).hexdigest(),
             "midpoint_reference": "all-global-edges",
+            "midpoint_selection": (
+                "adaptive-exact-sqeuclidean-then-global-edge-id-v1"
+            ),
+            "midpoint_search_width_histogram": {
+                str(width): count
+                for width, count in sorted(self._midpoint_width_histogram.items())
+            },
+            "spectral_initialization": "deterministic-block-lobpcg-v1",
+            "normalized_laplacian": (
+                "positive-degree-diagonal-one-isolate-diagonal-zero-v1"
+            ),
+            "spectral_eigenvalues": list(self._spectral_eigenvalues),
+            "spectral_max_relative_residual": self._spectral_max_relative_residual,
             "score_orientation": "farthest-radius-first",
         }

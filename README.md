@@ -13,13 +13,16 @@ numerical checks do not pass.
 For every run, GraphEm:
 
 1. validates one unweighted, undirected, loop-free, duplicate-free graph;
-2. computes the lowest normalized-Laplacian eigenspace and drops the first
-   eigenvector;
+2. computes one deterministic block-LOBPCG normalized-Laplacian eigenspace and
+   drops the first eigenvector, using diagonal zero for isolated vertices and
+   diagonal one for vertices of positive degree;
 3. draws one deterministic uniform query-edge subset without replacement using
    the recorded PCG64/Floyd recipe;
 4. on every iteration, recomputes all edge midpoints and performs exact cuVS
    brute-force search against the full midpoint array;
-5. removes self-neighbours by global edge-ID equality;
+5. removes self-neighbours by global edge-ID equality and resolves equal
+   squared distances by increasing global edge ID after adaptive exact
+   overquery proves that the complete cutoff tie has been observed;
 6. applies restoring spring forces;
 7. detects strict crossings in the xy projection and applies the four-endpoint
    centroid force in every embedding component;
@@ -34,8 +37,9 @@ index, cached neighbour set, alternate score orientation, or second embedder.
 ## Installation
 
 The package requires a CUDA 12 RAPIDS environment with CuPy and cuVS.
-The pinned 26.06 runtime also requires Python 3.11 or newer and
-``pylibcugraph-cu12`` for the mandatory connected-graph check.
+The pinned 26.06 runtime also requires Python 3.11 or newer.  Disconnected
+graphs and isolated vertices use the same normalized-Laplacian and force
+rules; vertices without incident edges simply receive no edge force.
 
 ```bash
 python -m pip install -e .
