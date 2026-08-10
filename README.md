@@ -2,7 +2,8 @@
 
 GraphEm embeds an undirected graph in a low-dimensional Euclidean space and
 scores each vertex by its distance from the origin.  This repository contains
-one CUDA/RAPIDS implementation of the corrected paper algorithm.
+one implementation of the corrected paper algorithm: the paper-faithful CPU
+SciPy spectral start followed by CUDA/RAPIDS search and force refinement.
 
 The implementation has no runtime algorithm selector.  Construction fails
 when the required GPU stack, graph invariants, eigensolve, midpoint search, or
@@ -13,16 +14,19 @@ numerical checks do not pass.
 For every run, GraphEm:
 
 1. validates one unweighted, undirected, loop-free, duplicate-free graph;
-2. computes one deterministic block-LOBPCG normalized-Laplacian eigenspace and
-   drops the first eigenvector, using diagonal zero for isolated vertices and
-   diagonal one for vertices of positive degree;
+2. computes one deterministic float64 CPU SciPy `eigsh(SM)`
+   normalized-Laplacian eigenspace and drops the first eigenvector, using
+   diagonal zero for isolated vertices and diagonal one for vertices of
+   positive degree;
 3. draws one deterministic uniform query-edge subset without replacement using
    the recorded PCG64/Floyd recipe;
 4. on every iteration, recomputes all edge midpoints and performs exact cuVS
    brute-force search against the full midpoint array;
 5. removes self-neighbours by global edge-ID equality and resolves equal
    squared distances by increasing global edge ID after adaptive exact
-   overquery proves that the complete cutoff tie has been observed;
+   overquery proves that the complete cutoff tie has been observed; negative
+   cuVS roundoff is accepted only after direct float32 recomputation satisfies
+   the recorded forward-error bound;
 6. applies restoring spring forces;
 7. detects strict crossings in the xy projection and applies the four-endpoint
    centroid force in every embedding component;
@@ -91,6 +95,11 @@ The corrected implementation is accepted in this order:
 5. the fixed golden paper matrix;
 6. a predeclared scale ladder; and
 7. independent-cascade and Ripples/IMM comparisons.
+
+Bitwise benchmark hashes are certified only for the dependency versions and
+runtime recorded by the `fast-geometric-repro` environment receipt.  Other
+supported SciPy releases remain subject to the same finiteness and eigensolver
+residual gates, but are not claimed to reproduce those bytes.
 
 Scaling evidence is not accepted when the golden matrix fails.  Every method
 emits its own success or typed failure record.  A failed comparator is never

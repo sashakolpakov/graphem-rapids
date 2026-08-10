@@ -7,8 +7,8 @@
 - Corrected midpoint neighbours to use global edge IDs, identity-based self
   removal, and deterministic distance/ID ordering with adaptive exact
   overquery at tied cutoffs.
-- Replaced single-vector ARPACK initialization with one deterministic block
-  LOBPCG solve and an explicit residual gate.
+- Replaced GPU spectral initialization with the paper's deterministic float64
+  SciPy `eigsh(SM)` solve and an explicit residual gate.
 - Defined the normalized Laplacian for disconnected graphs and isolated
   vertices without changing or dropping vertices.
 - Corrected the spring to restoring Hooke dynamics.

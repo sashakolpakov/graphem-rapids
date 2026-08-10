@@ -2,7 +2,9 @@ Quick start
 ===========
 
 GraphEm requires CUDA 12, CuPy, cupyx, and cuVS.  It does not select a second
-implementation when a required component is unavailable.
+implementation when a required component is unavailable.  Spectral
+initialization uses the paper's float64 CPU SciPy ``eigsh(SM)`` path; midpoint
+search and force refinement run on the GPU.
 
 .. code-block:: python
 

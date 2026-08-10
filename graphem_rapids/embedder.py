@@ -16,16 +16,16 @@ from typing import Optional
 
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.csgraph as sp_csgraph
+import scipy.sparse.linalg as sp_linalg
 
 try:  # Imports remain lazy so documentation and CPU contract tests can import.
     from cuvs.neighbors import brute_force
     import cupy as cp
     import cupyx.scipy.sparse as cpx_sparse
-    import cupyx.scipy.sparse.linalg as cpx_linalg
 except ImportError as gpu_import_error:  # pragma: no cover - host dependent
     cp = None
     cpx_sparse = None
-    cpx_linalg = None
     brute_force = None
     _GPU_IMPORT_ERROR = gpu_import_error
 else:  # pragma: no cover - host dependent
@@ -34,6 +34,12 @@ else:  # pragma: no cover - host dependent
 
 LOGGER = logging.getLogger(__name__)
 EPSILON = np.float32(1.0e-6)
+FLOAT32_UNIT_ROUNDOFF = np.float64(2.0**-24)
+FLOAT64_TINY = np.float64(2.2250738585072014e-308)
+SPECTRAL_TOLERANCE = np.float64(1.0e-10)
+SPECTRAL_MAX_ITERATIONS = 5000
+SPECTRAL_RESIDUAL_BOUND = np.float64(1.0e-8)
+SPECTRAL_PHASE_MULTIPLIER = np.float64(0.6180339887498949)
 
 
 _DETERMINISTIC_FORCE_KERNELS = r"""
@@ -194,10 +200,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         self.edges = device_edges
         self.n = vertex_count
         self.n_edges = int(device_edges.shape[0])
-        block_width = self.n_components + 1
-        if self.n <= 5 * block_width:
+        eigen_count = self.n_components + 1
+        if eigen_count >= self.n:
             raise ValueError(
-                "graph is too small for the requested block spectral embedding"
+                "n_components + 1 must be smaller than the vertex count"
             )
         if self.n_edges <= self.n_neighbors:
             raise ValueError("n_neighbors must be smaller than the edge count")
@@ -213,6 +219,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         )
         self._neighbor_ids = cp.ascontiguousarray(self._adjacency.indices)
         self._midpoint_width_histogram = {}
+        self._midpoint_negative_distance_repairs = 0
 
         self.timings = {
             "initialization_seconds": 0.0,
@@ -347,68 +354,88 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             )
         )
 
-    def _spectral_initialization(self):
-        positive_degree = self.degrees > 0
-        degree_inverse_sqrt = cp.zeros_like(self.degrees, dtype=cp.float32)
-        degree_inverse_sqrt[positive_degree] = cp.reciprocal(
-            cp.sqrt(self.degrees[positive_degree])
-        ).astype(cp.float32)
-        normalized = self._adjacency.multiply(degree_inverse_sqrt[:, None])
-        normalized = normalized.multiply(degree_inverse_sqrt[None, :])
-        active_diagonal = cpx_sparse.diags(
-            positive_degree.astype(cp.float32),
-            offsets=0,
-            shape=(self.n, self.n),
-            format="csr",
+    @staticmethod
+    def _scipy_spectral_embedding(edges, n_vertices, n_components, seed):
+        """Return the paper's deterministic normalized-Laplacian embedding."""
+        host_edges = np.asarray(edges)
+        rows = np.concatenate((host_edges[:, 0], host_edges[:, 1]))
+        columns = np.concatenate((host_edges[:, 1], host_edges[:, 0]))
+        adjacency = sp.csr_matrix(
+            (np.ones(rows.size, dtype=np.float64), (rows, columns)),
+            shape=(n_vertices, n_vertices),
+            dtype=np.float64,
         )
-        laplacian = active_diagonal - normalized
+        adjacency.sort_indices()
+        laplacian = sp.csr_matrix(
+            sp_csgraph.laplacian(adjacency, normed=True), dtype=np.float64
+        )
+        laplacian.sort_indices()
 
-        eigen_count = self.n_components + 1
-        vertex_ids = cp.arange(self.n, dtype=cp.float32)[:, None]
-        column_ids = cp.arange(1, eigen_count + 1, dtype=cp.float32)[None, :]
-        phase = np.float32((self.seed + 1) * 0.6180339887498949)
-        initial_block = cp.sin(
-            (vertex_ids + np.float32(1.0)) * column_ids + phase
-        ) + cp.cos(
-            (vertex_ids + np.float32(1.0))
-            * (column_ids + np.float32(0.5))
-            + phase
+        eigen_count = n_components + 1
+        vertex_ids = np.arange(n_vertices, dtype=np.float64)
+        phase = np.float64(seed + 1) * SPECTRAL_PHASE_MULTIPLIER
+        initial_vector = np.sin(vertex_ids + np.float64(1.0) + phase) + np.cos(
+            (vertex_ids + np.float64(1.0)) * np.float64(1.5) + phase
         )
-        initial_block, _ = cp.linalg.qr(initial_block, mode="reduced")
-        initial_block = cp.ascontiguousarray(initial_block, dtype=cp.float32)
-        eigenvalues, eigenvectors = cpx_linalg.lobpcg(
+        initial_norm = np.linalg.norm(initial_vector)
+        if not np.isfinite(initial_norm) or initial_norm <= FLOAT64_TINY:
+            raise FloatingPointError("spectral start vector is not finite and nonzero")
+        initial_vector /= initial_norm
+        krylov_dimension = min(n_vertices, max(2 * eigen_count + 1, 20))
+        eigenvalues, eigenvectors = sp_linalg.eigsh(
             laplacian,
-            initial_block,
-            largest=False,
-            tol=1.0e-4,
-            maxiter=500,
+            k=eigen_count,
+            which="SM",
+            v0=initial_vector,
+            ncv=krylov_dimension,
+            tol=SPECTRAL_TOLERANCE,
+            maxiter=SPECTRAL_MAX_ITERATIONS,
         )
-        order = cp.argsort(eigenvalues)
+        order = np.argsort(eigenvalues, kind="stable")
         eigenvalues = eigenvalues[order]
         eigenvectors = eigenvectors[:, order]
-        pivots = cp.argmax(cp.abs(eigenvectors), axis=0)
-        pivot_values = eigenvectors[pivots, cp.arange(eigen_count)]
-        signs = cp.where(pivot_values < 0, np.float32(-1.0), np.float32(1.0))
-        eigenvectors = eigenvectors * signs[None, :]
-        positions = cp.ascontiguousarray(
-            eigenvectors[:, 1 : self.n_components + 1], dtype=cp.float32
-        )
-        if positions.shape != (self.n, self.n_components):
-            raise RuntimeError("spectral solver returned an unexpected shape")
-        if not bool(cp.all(cp.isfinite(eigenvalues)).item()) or not bool(
-            cp.all(cp.isfinite(positions)).item()
+        if not np.all(np.isfinite(eigenvalues)) or not np.all(
+            np.isfinite(eigenvectors)
         ):
             raise FloatingPointError("spectral solver returned non-finite values")
+        pivots = np.argmax(np.abs(eigenvectors), axis=0)
+        pivot_values = eigenvectors[pivots, np.arange(eigen_count)]
+        signs = np.where(pivot_values < 0, np.float64(-1.0), np.float64(1.0))
+        eigenvectors = eigenvectors * signs[None, :]
         residual = laplacian @ eigenvectors - eigenvectors * eigenvalues[None, :]
-        denominator = cp.maximum(cp.linalg.norm(eigenvectors, axis=0), EPSILON)
-        relative_residual = cp.linalg.norm(residual, axis=0) / denominator
-        if bool(cp.any(relative_residual > np.float32(5.0e-4)).item()):
-            raise RuntimeError("spectral solver residual exceeds the accepted bound")
-        self._spectral_eigenvalues = cp.asnumpy(eigenvalues).astype(float).tolist()
-        self._spectral_max_relative_residual = float(
-            cp.max(relative_residual).item()
+        denominator = np.maximum(
+            np.linalg.norm(eigenvectors, axis=0), FLOAT64_TINY
         )
-        return positions
+        relative_residual = np.linalg.norm(residual, axis=0) / denominator
+        positions = np.ascontiguousarray(
+            eigenvectors[:, 1 : n_components + 1], dtype=np.float32
+        )
+        if positions.shape != (n_vertices, n_components):
+            raise RuntimeError("spectral solver returned an unexpected shape")
+        if not np.all(np.isfinite(relative_residual)) or not np.all(
+            np.isfinite(positions)
+        ):
+            raise FloatingPointError("spectral solver returned non-finite values")
+        if np.any(relative_residual > SPECTRAL_RESIDUAL_BOUND):
+            raise RuntimeError("spectral solver residual exceeds the accepted bound")
+        return (
+            positions,
+            eigenvalues.astype(float).tolist(),
+            float(np.max(relative_residual)),
+        )
+
+    def _spectral_initialization(self):
+        host_positions, eigenvalues, max_relative_residual = (
+            self._scipy_spectral_embedding(
+                cp.asnumpy(self.edges),
+                self.n,
+                self.n_components,
+                self.seed,
+            )
+        )
+        self._spectral_eigenvalues = eigenvalues
+        self._spectral_max_relative_residual = max_relative_residual
+        return cp.ascontiguousarray(cp.asarray(host_positions, dtype=cp.float32))
 
     @staticmethod
     def _search_result_arrays(result):
@@ -417,19 +444,67 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         distances, neighbors = result
         distances = cp.asarray(distances)
         neighbors = cp.asarray(neighbors)
-        if distances.dtype.kind not in "fc" or neighbors.dtype.kind not in "iu":
+        if distances.dtype != cp.float32 or neighbors.dtype.kind not in "iu":
             raise TypeError("unexpected cuVS brute-force result dtypes")
         if distances.shape != neighbors.shape:
             raise ValueError("cuVS distances and neighbor IDs must share a shape")
-        if not bool(cp.all(cp.isfinite(distances)).item()) or bool(
-            cp.any(distances < 0).item()
-        ):
-            raise FloatingPointError("cuVS returned invalid midpoint distances")
+        if not bool(cp.all(cp.isfinite(distances)).item()):
+            raise FloatingPointError("cuVS returned non-finite midpoint distances")
         if distances.shape[1] > 1 and bool(
             cp.any(distances[:, 1:] < distances[:, :-1]).item()
         ):
             raise ValueError("cuVS midpoint distances are not sorted")
         return distances, neighbors
+
+    @staticmethod
+    def _repair_negative_squared_distances(
+        distances, neighbors, queries, reference_midpoints
+    ):
+        """Recompute bounded negative cuVS squared distances directly."""
+        negative = distances < 0
+        repair_count = int(cp.sum(negative).item())
+        if repair_count == 0:
+            return distances, repair_count
+
+        negative_rows, _negative_columns = cp.nonzero(negative)
+        query_values = cp.asarray(queries[negative_rows], dtype=cp.float32)
+        reference_values = cp.asarray(
+            reference_midpoints[neighbors[negative]], dtype=cp.float32
+        )
+        deltas = query_values - reference_values
+        direct = cp.sum(deltas * deltas, axis=1, dtype=cp.float32)
+
+        query64 = query_values.astype(cp.float64)
+        reference64 = reference_values.astype(cp.float64)
+        absolute_query = cp.abs(query64)
+        absolute_reference = cp.abs(reference64)
+        scale = cp.sum(
+            absolute_query * absolute_query
+            + absolute_reference * absolute_reference
+            + np.float64(2.0) * absolute_query * absolute_reference,
+            axis=1,
+            dtype=cp.float64,
+        )
+        operation_count = 2 * queries.shape[1] + 5
+        gamma = (operation_count * FLOAT32_UNIT_ROUNDOFF) / (
+            1.0 - operation_count * FLOAT32_UNIT_ROUNDOFF
+        )
+        error_bound = np.float64(gamma) * scale
+        raw_negative = distances[negative].astype(cp.float64)
+        discrepancy = cp.abs(raw_negative - direct.astype(cp.float64))
+        valid = (
+            cp.isfinite(direct)
+            & (direct >= 0)
+            & cp.isfinite(error_bound)
+            & (discrepancy <= error_bound)
+        )
+        if not bool(cp.all(valid).item()):
+            raise FloatingPointError(
+                "negative cuVS squared distance exceeds the float32 error bound"
+            )
+        repaired = distances.copy()
+        repaired[negative] = direct
+        return repaired, repair_count
 
     @staticmethod
     def _lexicographic_nonself_candidates(neighbors, distances, query_edge_ids):
@@ -497,8 +572,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             (self.sample_size, self.n_neighbors), dtype=cp.int64
         )
         while int(unresolved.size):
-            result = brute_force.search(index, queries[unresolved], search_width)
+            query_subset = queries[unresolved]
+            result = brute_force.search(index, query_subset, search_width)
             distances, neighbors = self._search_result_arrays(result)
+            raw_search_boundary = distances[:, -1].copy()
             expected_shape = (int(unresolved.size), search_width)
             if neighbors.shape != expected_shape:
                 raise ValueError(
@@ -509,6 +586,10 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
                 cp.any(neighbors >= self.n_edges).item()
             ):
                 raise ValueError("cuVS returned an ID outside the global edge namespace")
+            distances, repair_count = self._repair_negative_squared_distances(
+                distances, neighbors, query_subset, midpoints
+            )
+            self._midpoint_negative_distance_repairs += repair_count
 
             query_edge_ids = self.sampled_edge_ids[unresolved]
             ordered_neighbors, ordered_distances, usable_counts = (
@@ -525,7 +606,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             if search_width == self.n_edges:
                 complete = cp.ones(unresolved.shape, dtype=cp.bool_)
             else:
-                complete = distances[:, -1] > cutoff
+                complete = raw_search_boundary > cutoff
             completed_count = int(cp.sum(complete).item())
             if completed_count:
                 completed_rows = unresolved[complete]
@@ -830,13 +911,39 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             "midpoint_selection": (
                 "adaptive-exact-sqeuclidean-then-global-edge-id-v1"
             ),
+            "midpoint_negative_distance_repair": (
+                "direct-float32-with-gamma-2d-plus-5-bound-v1"
+            ),
+            "midpoint_negative_distance_repair_count": (
+                self._midpoint_negative_distance_repairs
+            ),
             "midpoint_search_width_histogram": {
                 str(width): count
                 for width, count in sorted(self._midpoint_width_histogram.items())
             },
-            "spectral_initialization": "deterministic-block-lobpcg-v1",
+            "spectral_initialization": "deterministic-scipy-eigsh-sm-float64-v1",
+            "spectral_solver": {
+                "implementation": "scipy.sparse.linalg.eigsh",
+                "laplacian_dtype": "float64",
+                "which": "SM",
+                "eigenvector_count": self.n_components + 1,
+                "krylov_dimension": min(
+                    self.n, max(2 * (self.n_components + 1) + 1, 20)
+                ),
+                "tolerance": float(SPECTRAL_TOLERANCE),
+                "maximum_iterations": SPECTRAL_MAX_ITERATIONS,
+                "start_vector": (
+                    "normalized-sin(i+1+phase)-plus-cos((i+1)*1.5+phase)-v1"
+                ),
+                "phase": float(
+                    np.float64(self.seed + 1) * SPECTRAL_PHASE_MULTIPLIER
+                ),
+                "eigenvalue_order": "ascending-stable",
+                "sign_orientation": "lowest-argmax-absolute-pivot-nonnegative",
+                "maximum_relative_residual": float(SPECTRAL_RESIDUAL_BOUND),
+            },
             "normalized_laplacian": (
-                "positive-degree-diagonal-one-isolate-diagonal-zero-v1"
+                "scipy-symmetric-normalized-isolate-diagonal-zero-float64-v1"
             ),
             "spectral_eigenvalues": list(self._spectral_eigenvalues),
             "spectral_max_relative_residual": self._spectral_max_relative_residual,

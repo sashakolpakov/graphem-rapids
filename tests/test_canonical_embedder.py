@@ -105,6 +105,119 @@ def test_batched_midpoint_order_is_distance_then_global_id(monkeypatch):
     )
 
 
+def test_bounded_negative_squared_distance_is_recomputed_directly(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    queries = np.array([[1.0, 1.0]], dtype=np.float32)
+    references = np.array(
+        [[np.nextafter(np.float32(1.0), np.float32(2.0)), 1.0]],
+        dtype=np.float32,
+    )
+    raw = np.array([[-1.0e-7]], dtype=np.float32)
+    repaired, count = GraphEmbedder._repair_negative_squared_distances(
+        raw,
+        np.array([[0]], dtype=np.int64),
+        queries,
+        references,
+    )
+    expected = np.sum(
+        (queries[0] - references[0]) ** 2,
+        dtype=np.float32,
+    )
+    assert count == 1
+    assert repaired.dtype == np.float32
+    assert repaired[0, 0] == expected
+    assert raw[0, 0] < 0
+
+
+def test_material_negative_squared_distance_exceeding_bound_fails(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    queries = np.array([[1.0, 1.0]], dtype=np.float32)
+    references = queries.copy()
+    with pytest.raises(FloatingPointError, match="exceeds the float32 error bound"):
+        GraphEmbedder._repair_negative_squared_distances(
+            np.array([[-1.0e-2]], dtype=np.float32),
+            np.array([[0]], dtype=np.int64),
+            queries,
+            references,
+        )
+
+
+def test_midpoint_search_result_rejects_nonfinite_distance(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+    result = (
+        np.array([[0.0, np.nan]], dtype=np.float32),
+        np.array([[0, 1]], dtype=np.int64),
+    )
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        GraphEmbedder._search_result_arrays(result)
+
+
+def test_negative_repair_preserves_raw_boundary_completeness_proof(monkeypatch):
+    monkeypatch.setattr(implementation, "cp", np)
+
+    class FakeBruteForce:
+        """Expose a repaired ordering that cannot prove width-four completeness."""
+
+        widths = []
+
+        @staticmethod
+        def build(midpoints, metric):
+            assert metric == "sqeuclidean"
+            return midpoints
+
+        @classmethod
+        def search(cls, _index, _queries, width):
+            cls.widths.append(width)
+            if width == 4:
+                return (
+                    np.array(
+                        [[-4.0e-7, -3.0e-7, -2.0e-7, -1.0e-7]],
+                        dtype=np.float32,
+                    ),
+                    np.array([[4, 0, 1, 5]], dtype=np.int64),
+                )
+            assert width == 6
+            return (
+                np.array(
+                    [[0.0, 1.0e-8, 2.0e-8, 3.0e-8, 4.0e-8, 5.0e-8]],
+                    dtype=np.float32,
+                ),
+                np.array([[4, 0, 1, 2, 3, 5]], dtype=np.int64),
+            )
+
+    monkeypatch.setattr(implementation, "brute_force", FakeBruteForce)
+    embedder = object.__new__(GraphEmbedder)
+    midpoint_x = np.array(
+        [
+            np.nextafter(np.float32(1000.0), np.float32(2000.0)),
+            np.float32(1000.0001220703125),
+            np.float32(1000.0001831054688),
+            np.float32(1000.000244140625),
+            np.float32(1000.0),
+            np.float32(1000.001),
+        ],
+        dtype=np.float32,
+    )
+    midpoints = np.column_stack(
+        (midpoint_x, np.full(6, np.float32(1000.0), dtype=np.float32))
+    )
+    embedder.positions = np.repeat(midpoints, 2, axis=0)
+    embedder.edges = np.arange(12, dtype=np.int64).reshape(6, 2)
+    embedder.sampled_edge_ids = np.array([4], dtype=np.int64)
+    embedder.sample_size = 1
+    embedder.n_edges = 6
+    embedder.n_neighbors = 2
+    embedder._midpoint_width_histogram = {}
+    embedder._midpoint_negative_distance_repairs = 0
+
+    actual = embedder._midpoint_neighbors()
+
+    np.testing.assert_array_equal(actual, np.array([[0, 1]], dtype=np.int64))
+    assert FakeBruteForce.widths == [4, 6]
+    assert embedder._midpoint_width_histogram == {6: 1}
+    assert embedder._midpoint_negative_distance_repairs == 4
+
+
 def test_midpoint_search_doubles_until_full_cutoff_tie_is_observed(monkeypatch):
     monkeypatch.setattr(implementation, "cp", np)
 
@@ -143,6 +256,7 @@ def test_midpoint_search_doubles_until_full_cutoff_tie_is_observed(monkeypatch):
     embedder.n_edges = 6
     embedder.n_neighbors = 2
     embedder._midpoint_width_histogram = {}
+    embedder._midpoint_negative_distance_repairs = 0
 
     actual = embedder._midpoint_neighbors()
 
@@ -161,6 +275,50 @@ def test_query_edge_sampling_is_uniform_without_replacement():
         for seed in range(4096)
     }
     assert len(observed_subsets) == 70
+
+
+def test_scipy_spectral_embedding_is_bitwise_repeatable_on_degenerate_graph():
+    left_size = 10
+    right_size = 20
+    sources = np.repeat(np.arange(left_size, dtype=np.int64), right_size)
+    targets = np.tile(
+        np.arange(left_size, left_size + right_size, dtype=np.int64), left_size
+    )
+    edges = np.column_stack((sources, targets))
+
+    first = GraphEmbedder._scipy_spectral_embedding(
+        edges, left_size + right_size, 4, 20250608
+    )
+    second = GraphEmbedder._scipy_spectral_embedding(
+        edges, left_size + right_size, 4, 20250608
+    )
+
+    np.testing.assert_array_equal(first[0], second[0])
+    assert first[1:] == second[1:]
+    np.testing.assert_allclose(first[1], [0.0, 1.0, 1.0, 1.0, 1.0], atol=1.0e-12)
+    pivots = np.argmax(np.abs(first[0]), axis=0)
+    assert np.all(first[0][pivots, np.arange(4)] >= 0)
+    assert first[2] <= 1.0e-12
+
+
+def test_scipy_spectral_embedding_preserves_components_and_isolate():
+    first_component = np.column_stack(
+        (np.arange(19, dtype=np.int64), np.arange(1, 20, dtype=np.int64))
+    )
+    second_component = np.array(
+        [[20, 21], [21, 22], [22, 23], [23, 24], [24, 20]], dtype=np.int64
+    )
+    edges = np.vstack((first_component, second_component))
+
+    positions, eigenvalues, max_residual = GraphEmbedder._scipy_spectral_embedding(
+        edges, 26, 3, 7
+    )
+
+    assert positions.shape == (26, 3)
+    assert positions.dtype == np.float32
+    assert np.all(np.isfinite(positions))
+    assert sum(abs(value) < 1.0e-10 for value in eigenvalues) >= 2
+    assert max_residual <= 1.0e-8
 
 
 @pytest.mark.parametrize("sparse_format", ["csr", "coo"])
@@ -310,10 +468,17 @@ def test_source_uses_one_disconnected_graph_and_adaptive_tie_contract():
     source = inspect.getsource(GraphEmbedder)
     assert "connected_components" not in source
     assert "must not contain isolated vertices" not in source
-    assert "cpx_linalg.lobpcg" in source
-    assert "cpx_linalg.eigsh" not in source
-    assert "positive_degree.astype(cp.float32)" in source
-    assert "distances[:, -1] > cutoff" in source
+    assert "if eigen_count >= self.n" in source
+    assert "sp_linalg.eigsh" in source
+    assert "sp_csgraph.laplacian" in source
+    assert 'which="SM"' in source
+    assert "lobpcg" not in source.lower()
+    assert "dtype=np.float64" in source
+    assert 'kind="stable"' in source
+    assert "tol=SPECTRAL_TOLERANCE" in source
+    assert "maxiter=SPECTRAL_MAX_ITERATIONS" in source
+    assert "raw_search_boundary = distances[:, -1].copy()" in source
+    assert "raw_search_boundary > cutoff" in source
     assert "search_width = min(self.n_edges, search_width * 2)" in source
 
 
