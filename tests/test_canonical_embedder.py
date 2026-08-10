@@ -314,6 +314,9 @@ def test_torch_spectral_embedding_is_repeatable_on_degenerate_graph():
         first_diagnostics["maximum_eigenpair_residual_norm_ratio"] <= 1.0e-8
     )
     assert first_diagnostics["orthogonality_error"] <= 1.0e-8
+    assert first_diagnostics["output_eigenpair_count"] == 5
+    assert first_diagnostics["solver_block_width"] == 16
+    assert first_diagnostics["maximum_iterations"] == 5000
     assert first_diagnostics["start_sha256"] == second_diagnostics["start_sha256"]
     repeat_metrics = GraphEmbedder._torch_subspace_repeat_metrics(first, second)
     assert repeat_metrics["projector_frobenius_distance"] <= 1.0e-5
@@ -340,6 +343,7 @@ def test_torch_spectral_embedding_preserves_components_and_isolate():
     assert bool(torch.isfinite(positions).all())
     assert sum(abs(value) < 1.0e-8 for value in diagnostics["eigenvalues"]) >= 3
     assert diagnostics["maximum_eigenpair_residual_norm_ratio"] <= 1.0e-8
+    assert diagnostics["solver_block_width"] == 8
 
 
 @pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
@@ -356,6 +360,8 @@ def test_torch_spectral_cpu_and_cuda_use_the_same_function():
     cuda_positions, cuda_diagnostics = GraphEmbedder._torch_spectral_embedding(
         edges, 12, 2, 19, device="cuda"
     )
+    assert cpu_diagnostics["solver_block_width"] == 4
+    assert cuda_diagnostics["solver_block_width"] == 4
     np.testing.assert_allclose(
         cpu_diagnostics["eigenvalues"],
         cuda_diagnostics["eigenvalues"],
@@ -400,20 +406,34 @@ def test_torch_spectral_rejects_graphs_outside_lobpcg_domain():
 @pytest.mark.skipif(torch is None, reason="PyTorch is unavailable")
 def test_torch_spectral_rejects_bad_solver_output(monkeypatch):
     edges = np.column_stack(
-        (np.arange(11, dtype=np.int64), np.arange(1, 12, dtype=np.int64))
+        (np.arange(63, dtype=np.int64), np.arange(1, 64, dtype=np.int64))
     )
 
-    def bad_lobpcg(matrix, *, k, **_kwargs):
+    def bad_lobpcg(matrix, *, k, X, tracker, **_kwargs):
+        full_width = X.shape[1]
+        full_values = torch.zeros(full_width, dtype=torch.float64)
+        full_vectors = torch.ones(
+            (matrix.shape[0], full_width), dtype=torch.float64
+        )
+
+        class Worker:
+            """Synthetic nonconverged Torch LOBPCG tracker state."""
+
+            ivars = {"istep": 1, "converged_count": 0}
+            E = full_values
+            X = full_vectors
+
+        tracker(Worker())
         return (
-            torch.zeros(k, dtype=torch.float64),
-            torch.ones((matrix.shape[0], k), dtype=torch.float64),
+            full_values[:k],
+            full_vectors[:, :k],
         )
 
     monkeypatch.setattr(torch, "lobpcg", bad_lobpcg)
     with pytest.warns(RuntimeWarning, match="using CPU"):
         with pytest.raises(RuntimeError, match="residual exceeds"):
             GraphEmbedder._torch_spectral_embedding(
-                edges, 12, 2, 19, device="cpu"
+                edges, 64, 2, 19, device="cpu"
             )
 
 

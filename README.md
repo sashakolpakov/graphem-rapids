@@ -98,10 +98,9 @@ The corrected implementation is accepted in this order:
 6. a predeclared scale ladder; and
 7. independent-cascade and Ripples/IMM comparisons.
 
-Bitwise benchmark hashes are certified only for the dependency versions and
-runtime recorded by the `fast-geometric-repro` environment receipt.  Other
-supported SciPy releases remain subject to the same finiteness and eigensolver
-residual gates, but are not claimed to reproduce those bytes.
+Each benchmark records its dependency and runtime environment.  Supported
+dependency releases must pass the same finiteness and spectral residual gates;
+byte equality is measured for provenance but is not an acceptance gate.
 
 Scaling evidence is not accepted when the golden matrix fails.  Every method
 emits its own success or typed failure record.  A failed comparator is never

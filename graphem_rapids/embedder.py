@@ -47,13 +47,14 @@ LOGGER = logging.getLogger(__name__)
 EPSILON = np.float32(1.0e-6)
 FLOAT32_UNIT_ROUNDOFF = np.float64(2.0**-24)
 SPECTRAL_TOLERANCE = np.float64(1.0e-10)
-SPECTRAL_MAX_ITERATIONS = 500
+SPECTRAL_MAX_ITERATIONS = 5000
 SPECTRAL_RESIDUAL_BOUND = np.float64(1.0e-8)
 SPECTRAL_ORTHOGONALITY_BOUND = np.float64(1.0e-8)
 SPECTRAL_SHIFT = np.float64(3.0)
 SPECTRAL_CLUSTER_BOUND = np.float64(1.0e-8)
+SPECTRAL_MINIMUM_BLOCK_WIDTH = 16
 SPECTRAL_START_ALGORITHM = "analytic-sine-cosine-qr-float64-v1"
-TORCH_SPECTRAL_BACKEND = "torch-lobpcg-shifted-normalized-laplacian-v1"
+TORCH_SPECTRAL_BACKEND = "torch-lobpcg-shifted-normalized-laplacian-v2"
 
 
 _DETERMINISTIC_FORCE_KERNELS = r"""
@@ -551,6 +552,13 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             raise ValueError(
                 "Torch LOBPCG requires n_vertices >= 3 * (n_components + 1)"
             )
+        solver_block_width = min(
+            max(SPECTRAL_MINIMUM_BLOCK_WIDTH, eigen_count),
+            n_vertices // 3,
+        )
+
+        if resolved.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(resolved)
 
         def synchronize():
             if resolved.type == "cuda":
@@ -603,7 +611,7 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         stage_started = time.perf_counter()
         start, start_rank_ratio, start_orthogonality_error = (
             GraphEmbedder._torch_spectral_start(
-                n_vertices, eigen_count, seed, resolved
+                n_vertices, solver_block_width, seed, resolved
             )
         )
         start_sha256 = GraphEmbedder._tensor_sha256(start, "<f8")
@@ -611,7 +619,11 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
         timings["start_seconds"] = time.perf_counter() - stage_started
 
         stage_started = time.perf_counter()
-        tracker_state = {"iterations": 0, "converged_count": 0}
+        tracker_state = {
+            "iterations": 0,
+            "converged_count": 0,
+        }
+
         def tracker(worker):
             tracker_state["iterations"] = int(worker.ivars["istep"])
             tracker_state["converged_count"] = int(
@@ -722,11 +734,17 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             "solver": solver,
             "method": "ortho",
             "largest": True,
-            "eigenvector_count": eigen_count,
+            "output_eigenpair_count": eigen_count,
+            "solver_block_width": solver_block_width,
+            "solver_oversampling_count": solver_block_width - eigen_count,
+            "solver_block_width_policy": (
+                "min(max(16,n_components+1),floor(n_vertices/3))"
+            ),
             "tolerance": float(SPECTRAL_TOLERANCE),
             "maximum_iterations": SPECTRAL_MAX_ITERATIONS,
             "domain_requirement": (
-                "n_vertices>=3*(n_components+1); otherwise-fail-closed"
+                "n_vertices>=3*output_eigenpair_count;"
+                "solver_block_width<=floor(n_vertices/3);otherwise-fail-closed"
             ),
             "observed_iterations": tracker_state["iterations"],
             "reported_converged_count": tracker_state["converged_count"],
@@ -757,6 +775,16 @@ class GraphEmbedder:  # pylint: disable=too-many-instance-attributes
             "cluster_gap_bound": float(SPECTRAL_CLUSTER_BOUND),
             "eigenvalue_gaps": gaps,
             "eigenvalue_clusters_half_open": clusters,
+            "torch_peak_memory_allocated_bytes": (
+                int(torch.cuda.max_memory_allocated(resolved))
+                if resolved.type == "cuda"
+                else None
+            ),
+            "torch_peak_memory_reserved_bytes": (
+                int(torch.cuda.max_memory_reserved(resolved))
+                if resolved.type == "cuda"
+                else None
+            ),
             "timings": timings,
         }
         return positions.contiguous(), diagnostics
