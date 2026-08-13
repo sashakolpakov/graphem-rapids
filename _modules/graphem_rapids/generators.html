@@ -1,0 +1,556 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>graphem_rapids.generators &mdash; GraphEm RAPIDS documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=6fc6f92e"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            GraphEm Rapids
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../generators.html">Graph Generators</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">GraphEm Rapids</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">graphem_rapids.generators</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for graphem_rapids.generators</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Graph generators for Graphem.</span>
+
+<span class="sd">This module provides various functions to generate different types of graphs.</span>
+<span class="sd">All generators return sparse adjacency matrices instead of simple edge lists.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">networkx</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nx</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.sparse</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sp</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.spatial</span><span class="w"> </span><span class="kn">import</span> <span class="n">Delaunay</span>  <span class="c1"># pylint: disable=no-name-in-module</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert NetworkX graph to sparse adjacency matrix.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">nx</span><span class="o">.</span><span class="n">adjacency_matrix</span><span class="p">(</span><span class="n">G</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_edges_to_sparse_adjacency</span><span class="p">(</span><span class="n">edges</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert edge list to sparse adjacency matrix.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">edges</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">sp</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="c1"># Create undirected adjacency matrix from edges</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">edges</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">edges</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]])</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">edges</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">edges</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]])</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="n">adj</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">((</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">cols</span><span class="p">)),</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">adj</span>
+
+
+<div class="viewcode-block" id="generate_er">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_er">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_er</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a random undirected graph using the Erdős–Rényi G(n, p) model.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      p: float</span>
+<span class="sd">         Probability that an edge exists between any pair of vertices.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">erdos_renyi_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="compute_vertex_degrees">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.compute_vertex_degrees">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_vertex_degrees</span><span class="p">(</span><span class="n">adjacency</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute the degree of each vertex from the adjacency matrix.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      adjacency: scipy.sparse matrix</span>
+<span class="sd">         Sparse adjacency matrix</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      degrees: np.array of shape (n,) with degree of each vertex</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># For undirected graphs, degree is sum of each row</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">adjacency</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="generate_sbm">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_sbm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_sbm</span><span class="p">(</span><span class="n">n_per_block</span><span class="o">=</span><span class="mi">75</span><span class="p">,</span> <span class="n">num_blocks</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">p_in</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span> <span class="n">p_out</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a stochastic block model graph.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n_per_block: int</span>
+<span class="sd">         Number of vertices per block.</span>
+<span class="sd">      num_blocks: int</span>
+<span class="sd">         Number of blocks.</span>
+<span class="sd">      p_in: float</span>
+<span class="sd">         Probability of edge within a block.</span>
+<span class="sd">      p_out: float</span>
+<span class="sd">         Probability of edge between blocks.</span>
+<span class="sd">      labels: bool</span>
+<span class="sd">         If True, return vertex labels.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">      labels: np.ndarray of shape (n,) (only if labels=True)</span>
+<span class="sd">         Block labels for each vertex.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Use NetworkX to generate the SBM</span>
+    <span class="n">sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">n_per_block</span><span class="p">]</span> <span class="o">*</span> <span class="n">num_blocks</span>
+    <span class="n">p_matrix</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">num_blocks</span><span class="p">,</span> <span class="n">num_blocks</span><span class="p">))</span> <span class="o">*</span> <span class="n">p_out</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">fill_diagonal</span><span class="p">(</span><span class="n">p_matrix</span><span class="p">,</span> <span class="n">p_in</span><span class="p">)</span>
+
+    <span class="c1"># Generate the graph</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">stochastic_block_model</span><span class="p">(</span><span class="n">sizes</span><span class="p">,</span> <span class="n">p_matrix</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+
+    <span class="c1"># Convert to sparse adjacency matrix</span>
+    <span class="n">adjacency</span> <span class="o">=</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span>
+
+    <span class="c1"># Return labels if requested</span>
+    <span class="k">if</span> <span class="n">labels</span><span class="p">:</span>
+        <span class="c1"># Generate labels (block IDs for each vertex)</span>
+        <span class="n">vertex_labels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">num_blocks</span><span class="p">),</span> <span class="n">n_per_block</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">adjacency</span><span class="p">,</span> <span class="n">vertex_labels</span>
+
+    <span class="k">return</span> <span class="n">adjacency</span></div>
+
+
+
+<div class="viewcode-block" id="generate_ba">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_ba">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_ba</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a Barabási-Albert preferential attachment graph.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      m: int</span>
+<span class="sd">         Number of edges to attach from a new vertex to existing vertices.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">barabasi_albert_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_ws">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_ws">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_ws</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a Watts-Strogatz small-world graph.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      k: int</span>
+<span class="sd">         Each vertex is connected to k nearest neighbors in ring topology.</span>
+<span class="sd">      p: float</span>
+<span class="sd">         Probability of rewiring each edge.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">watts_strogatz_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_power_cluster">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_power_cluster">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_power_cluster</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a powerlaw cluster graph.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      m: int</span>
+<span class="sd">         Number of random edges to add per new vertex.</span>
+<span class="sd">      p: float</span>
+<span class="sd">         Probability of adding a triangle after adding a random edge.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">powerlaw_cluster_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_road_network">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_road_network">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_road_network</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a 2D grid graph representing a road network.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      width: int</span>
+<span class="sd">         Width of the grid.</span>
+<span class="sd">      height: int</span>
+<span class="sd">         Height of the grid.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">grid_2d_graph</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="p">)</span>
+
+    <span class="c1"># Convert node labels from (x,y) tuples to integers</span>
+    <span class="n">mapping</span> <span class="o">=</span> <span class="p">{</span><span class="n">node</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">G</span><span class="o">.</span><span class="n">nodes</span><span class="p">())}</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">relabel_nodes</span><span class="p">(</span><span class="n">G</span><span class="p">,</span> <span class="n">mapping</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_bipartite_graph">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_bipartite_graph">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_bipartite_graph</span><span class="p">(</span><span class="n">n_top</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">n_bottom</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a random bipartite graph.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      n_top: int</span>
+<span class="sd">         Number of vertices in the top set.</span>
+<span class="sd">      n_bottom: int</span>
+<span class="sd">         Number of vertices in the bottom set.</span>
+<span class="sd">      p: float</span>
+<span class="sd">         Probability of edge between any vertex in top set and any vertex in bottom set.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">bipartite</span><span class="o">.</span><span class="n">random_graph</span><span class="p">(</span><span class="n">n_top</span><span class="p">,</span> <span class="n">n_bottom</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_complete_bipartite_graph">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_complete_bipartite_graph">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_complete_bipartite_graph</span><span class="p">(</span><span class="n">n_top</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">n_bottom</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a complete bipartite graph.</span>
+
+<span class="sd">    In a complete bipartite graph, every vertex in the top set is connected</span>
+<span class="sd">    to every vertex in the bottom set, resulting in n_top * n_bottom edges.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      n_top: int</span>
+<span class="sd">         Number of vertices in the top set.</span>
+<span class="sd">      n_bottom: int</span>
+<span class="sd">         Number of vertices in the bottom set.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_top</span><span class="p">,</span> <span class="n">n_bottom</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">n_top</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">n_bottom</span><span class="p">)</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">complete_bipartite_graph</span><span class="p">(</span><span class="n">n_top</span><span class="p">,</span> <span class="n">n_bottom</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_balanced_tree">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_balanced_tree">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_balanced_tree</span><span class="p">(</span><span class="n">r</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a balanced r-ary tree of height h.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      r: int</span>
+<span class="sd">         Branching factor of the tree.</span>
+<span class="sd">      h: int</span>
+<span class="sd">         Height of the tree.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">balanced_tree</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_random_regular">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_random_regular">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_random_regular</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a random regular graph where each node has degree d.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      d: int</span>
+<span class="sd">         Degree of each vertex.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">random_regular_graph</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_scale_free">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_scale_free">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_scale_free</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.41</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">0.54</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">delta_in</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">delta_out</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a scale-free graph using Holme and Kim algorithm.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      alpha, beta, gamma, delta_in, delta_out: float</span>
+<span class="sd">         Parameters for the scale-free graph generation.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+<span class="sd">         </span>
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">scale_free_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">delta_in</span><span class="p">,</span> <span class="n">delta_out</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="c1"># Convert to undirected graph by dropping edge directions</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">G</span><span class="o">.</span><span class="n">to_undirected</span><span class="p">()</span>
+    <span class="c1"># Remove self-loops</span>
+    <span class="n">G</span><span class="o">.</span><span class="n">remove_edges_from</span><span class="p">(</span><span class="n">nx</span><span class="o">.</span><span class="n">selfloop_edges</span><span class="p">(</span><span class="n">G</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_geometric">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_geometric">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_geometric</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a random geometric graph in a unit cube.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      radius: float</span>
+<span class="sd">         Distance threshold for connecting vertices.</span>
+<span class="sd">      dim: int</span>
+<span class="sd">         Dimension of the space.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+<span class="sd">         </span>
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">random_geometric_graph</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">radius</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="n">dim</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_caveman">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_caveman">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_caveman</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a caveman graph with l cliques of size k.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters:</span>
+<span class="sd">      l: int</span>
+<span class="sd">         Number of cliques.</span>
+<span class="sd">      k: int</span>
+<span class="sd">         Size of each clique.</span>
+<span class="sd">         </span>
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">caveman_graph</span><span class="p">(</span><span class="n">l</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_relaxed_caveman">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_relaxed_caveman">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_relaxed_caveman</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a relaxed caveman graph with l cliques of size k,</span>
+<span class="sd">    and a rewiring probability p.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      l: int</span>
+<span class="sd">         Number of cliques.</span>
+<span class="sd">      k: int</span>
+<span class="sd">         Size of each clique.</span>
+<span class="sd">      p: float</span>
+<span class="sd">         Rewiring probability.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">relaxed_caveman_graph</span><span class="p">(</span><span class="n">l</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="generate_delaunay_triangulation">
+<a class="viewcode-back" href="../../api.html#graphem_rapids.generators.generate_delaunay_triangulation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_delaunay_triangulation</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a Delaunay triangulation graph.</span>
+
+<span class="sd">    Vertices are randomly placed in a 2D unit square, and edges are created</span>
+<span class="sd">    based on the Delaunay triangulation of these points. The resulting graph</span>
+<span class="sd">    has planar structure with triangular faces.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">      n: int</span>
+<span class="sd">         Number of vertices.</span>
+<span class="sd">      seed: int</span>
+<span class="sd">         Random seed for reproducibility.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      adjacency: scipy.sparse.csr_matrix</span>
+<span class="sd">         Sparse adjacency matrix (n × n).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Generate random points in 2D unit square</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomState</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>  <span class="c1"># pylint: disable=no-member</span>
+    <span class="n">pts</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Compute Delaunay triangulation</span>
+    <span class="n">tri</span> <span class="o">=</span> <span class="n">Delaunay</span><span class="p">(</span><span class="n">pts</span><span class="p">)</span>
+
+    <span class="c1"># Build graph from triangulation</span>
+    <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
+    <span class="n">G</span><span class="o">.</span><span class="n">add_nodes_from</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
+
+    <span class="c1"># Each simplex is a triangle (i, j, k)</span>
+    <span class="k">for</span> <span class="n">simplex</span> <span class="ow">in</span> <span class="n">tri</span><span class="o">.</span><span class="n">simplices</span><span class="p">:</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">simplex</span>
+        <span class="n">G</span><span class="o">.</span><span class="n">add_edges_from</span><span class="p">([(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span> <span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">k</span><span class="p">),</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">i</span><span class="p">)])</span>
+
+    <span class="k">return</span> <span class="n">_nx_to_sparse_adjacency</span><span class="p">(</span><span class="n">G</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Alexander Kolpakov and Igor Rivin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

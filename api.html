@@ -1,0 +1,711 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API reference &mdash; GraphEm RAPIDS documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=6fc6f92e"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Graph Generators" href="generators.html" />
+    <link rel="prev" title="Quick start" href="quickstart.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GraphEm Rapids
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#graphembedder">GraphEmbedder</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.GraphEmbedder"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.update_positions"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.update_positions()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.run_layout"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.run_layout()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.get_positions"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.get_positions()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.get_scores"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.get_scores()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.get_top_k"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.get_top_k()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#graphem_rapids.GraphEmbedder.get_diagnostics"><code class="docutils literal notranslate"><span class="pre">GraphEmbedder.get_diagnostics()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#graph-generators">Graph generators</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_er"><code class="docutils literal notranslate"><span class="pre">generate_er()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.compute_vertex_degrees"><code class="docutils literal notranslate"><span class="pre">compute_vertex_degrees()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_sbm"><code class="docutils literal notranslate"><span class="pre">generate_sbm()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_ba"><code class="docutils literal notranslate"><span class="pre">generate_ba()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_ws"><code class="docutils literal notranslate"><span class="pre">generate_ws()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_power_cluster"><code class="docutils literal notranslate"><span class="pre">generate_power_cluster()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_road_network"><code class="docutils literal notranslate"><span class="pre">generate_road_network()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_bipartite_graph"><code class="docutils literal notranslate"><span class="pre">generate_bipartite_graph()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_complete_bipartite_graph"><code class="docutils literal notranslate"><span class="pre">generate_complete_bipartite_graph()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_balanced_tree"><code class="docutils literal notranslate"><span class="pre">generate_balanced_tree()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_random_regular"><code class="docutils literal notranslate"><span class="pre">generate_random_regular()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_scale_free"><code class="docutils literal notranslate"><span class="pre">generate_scale_free()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_geometric"><code class="docutils literal notranslate"><span class="pre">generate_geometric()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_caveman"><code class="docutils literal notranslate"><span class="pre">generate_caveman()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_relaxed_caveman"><code class="docutils literal notranslate"><span class="pre">generate_relaxed_caveman()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#graphem_rapids.generators.generate_delaunay_triangulation"><code class="docutils literal notranslate"><span class="pre">generate_delaunay_triangulation()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="generators.html">Graph Generators</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GraphEm Rapids</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<section id="graphembedder">
+<h2>GraphEmbedder<a class="headerlink" href="#graphembedder" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">GraphEmbedder</span></code> accepts exactly one undirected simple graph through either a
+SciPy-compatible adjacency matrix or a CUDA/array-compatible edge list.  The
+<code class="docutils literal notranslate"><span class="pre">device</span></code> keyword controls the shared Torch spectral function; the remaining
+layout path is always CUDA/RAPIDS.  Production calls should pass
+<code class="docutils literal notranslate"><span class="pre">device=&quot;cuda&quot;</span></code> explicitly.  <code class="docutils literal notranslate"><span class="pre">midpoint_query_batch_size</span></code> configures exact
+cuVS query batches from 1 through the canonical hard ceiling of 64; it does not
+change the midpoint reference, search method, adaptive cutoff proof, or
+distance/global-edge-ID result order.  Each returned query row must contain
+unique global edge IDs; validation occurs before negative-distance repair.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">graphem_rapids.</span></span><span class="sig-name descname"><span class="pre">GraphEmbedder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">adjacency</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_components</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">L_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k_attr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k_inter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_neighbors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sample_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">256</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">logger_instance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cuda'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">midpoint_query_batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edges</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_vertices</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder" title="Link to this definition"></a></dt>
+<dd><p>Embed one undirected simple graph with the canonical GraphEm dynamics.</p>
+<p>Exactly one of <code class="docutils literal notranslate"><span class="pre">adjacency</span></code> or <code class="docutils literal notranslate"><span class="pre">edges</span></code> must be supplied.  The graph must
+be loop-free, duplicate-free, and large enough for the requested block
+eigenspace and midpoint neighbourhood.  Disconnected graphs and isolated
+vertices use the same normalized-Laplacian convention as connected graphs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_components</strong> (<em>int</em>)</p></li>
+<li><p><strong>L_min</strong> (<em>float</em>)</p></li>
+<li><p><strong>k_attr</strong> (<em>float</em>)</p></li>
+<li><p><strong>k_inter</strong> (<em>float</em>)</p></li>
+<li><p><strong>n_neighbors</strong> (<em>int</em>)</p></li>
+<li><p><strong>sample_size</strong> (<em>int</em>)</p></li>
+<li><p><strong>seed</strong> (<em>int</em>)</p></li>
+<li><p><strong>verbose</strong> (<em>bool</em>)</p></li>
+<li><p><strong>logger_instance</strong> (<em>Optional</em><em>[</em><em>logging.Logger</em><em>]</em>)</p></li>
+<li><p><strong>midpoint_query_batch_size</strong> (<em>int</em>)</p></li>
+<li><p><strong>n_vertices</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.update_positions">
+<span class="sig-name descname"><span class="pre">update_positions</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.update_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.update_positions" title="Link to this definition"></a></dt>
+<dd><p>Apply one complete spring, crossing, update, and normalization step.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.run_layout">
+<span class="sig-name descname"><span class="pre">run_layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_iterations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.run_layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.run_layout" title="Link to this definition"></a></dt>
+<dd><p>Run exactly <code class="docutils literal notranslate"><span class="pre">num_iterations</span></code> complete GraphEm steps.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>num_iterations</strong> (<em>int</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.get_positions">
+<span class="sig-name descname"><span class="pre">get_positions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">as_numpy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.get_positions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.get_positions" title="Link to this definition"></a></dt>
+<dd><p>Return the complete embedding positions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>as_numpy</strong> (<em>bool</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.get_scores">
+<span class="sig-name descname"><span class="pre">get_scores</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">as_numpy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.get_scores"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.get_scores" title="Link to this definition"></a></dt>
+<dd><p>Return Euclidean radius for every vertex.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>as_numpy</strong> (<em>bool</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.get_top_k">
+<span class="sig-name descname"><span class="pre">get_top_k</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">as_numpy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.get_top_k"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.get_top_k" title="Link to this definition"></a></dt>
+<dd><p>Return vertex IDs ordered by decreasing radius and then ID.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>k</strong> (<em>int</em>)</p></li>
+<li><p><strong>as_numpy</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="graphem_rapids.GraphEmbedder.get_diagnostics">
+<span class="sig-name descname"><span class="pre">get_diagnostics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/embedder.html#GraphEmbedder.get_diagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.GraphEmbedder.get_diagnostics" title="Link to this definition"></a></dt>
+<dd><p>Return configuration and primitive timing scopes for this instance.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="graph-generators">
+<h2>Graph generators<a class="headerlink" href="#graph-generators" title="Link to this heading"></a></h2>
+<p>Generators return symmetric SciPy CSR adjacency matrices.  <code class="docutils literal notranslate"><span class="pre">GraphEmbedder</span></code>
+then enforces its binary simple-graph contract; see <a class="reference internal" href="generators.html"><span class="doc">Graph Generators</span></a> for the
+scale-free multiedge caveat.</p>
+<p id="module-graphem_rapids.generators">Graph generators for Graphem.</p>
+<p>This module provides various functions to generate different types of graphs.
+All generators return sparse adjacency matrices instead of simple edge lists.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_er">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_er</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_er"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_er" title="Link to this definition"></a></dt>
+<dd><p>Generate a random undirected graph using the Erdős–Rényi G(n, p) model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>p</strong> – float
+Probability that an edge exists between any pair of vertices.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.compute_vertex_degrees">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">compute_vertex_degrees</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">adjacency</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#compute_vertex_degrees"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.compute_vertex_degrees" title="Link to this definition"></a></dt>
+<dd><p>Compute the degree of each vertex from the adjacency matrix.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>adjacency</strong> – scipy.sparse matrix
+Sparse adjacency matrix</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>np.array of shape (n,) with degree of each vertex</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>degrees</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_sbm">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_sbm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_per_block</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_blocks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">labels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_sbm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_sbm" title="Link to this definition"></a></dt>
+<dd><p>Generate a stochastic block model graph.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_per_block</strong> – int
+Number of vertices per block.</p></li>
+<li><p><strong>num_blocks</strong> – int
+Number of blocks.</p></li>
+<li><p><strong>p_in</strong> – float
+Probability of edge within a block.</p></li>
+<li><p><strong>p_out</strong> – float
+Probability of edge between blocks.</p></li>
+<li><p><strong>labels</strong> – bool
+If True, return vertex labels.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+<dt>labels: np.ndarray of shape (n,) (only if labels=True)</dt><dd><p>Block labels for each vertex.</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_ba">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_ba</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_ba"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_ba" title="Link to this definition"></a></dt>
+<dd><p>Generate a Barabási-Albert preferential attachment graph.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>m</strong> – int
+Number of edges to attach from a new vertex to existing vertices.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_ws">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_ws</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_ws"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_ws" title="Link to this definition"></a></dt>
+<dd><p>Generate a Watts-Strogatz small-world graph.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>k</strong> – int
+Each vertex is connected to k nearest neighbors in ring topology.</p></li>
+<li><p><strong>p</strong> – float
+Probability of rewiring each edge.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_power_cluster">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_power_cluster</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_power_cluster"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_power_cluster" title="Link to this definition"></a></dt>
+<dd><p>Generate a powerlaw cluster graph.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>m</strong> – int
+Number of random edges to add per new vertex.</p></li>
+<li><p><strong>p</strong> – float
+Probability of adding a triangle after adding a random edge.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_road_network">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_road_network</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">height</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_road_network"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_road_network" title="Link to this definition"></a></dt>
+<dd><p>Generate a 2D grid graph representing a road network.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>width</strong> – int
+Width of the grid.</p></li>
+<li><p><strong>height</strong> – int
+Height of the grid.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_bipartite_graph">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_bipartite_graph</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_top</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bottom</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_bipartite_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_bipartite_graph" title="Link to this definition"></a></dt>
+<dd><p>Generate a random bipartite graph.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_top</strong> – int
+Number of vertices in the top set.</p></li>
+<li><p><strong>n_bottom</strong> – int
+Number of vertices in the bottom set.</p></li>
+<li><p><strong>p</strong> – float
+Probability of edge between any vertex in top set and any vertex in bottom set.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_complete_bipartite_graph">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_complete_bipartite_graph</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_top</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bottom</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_complete_bipartite_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_complete_bipartite_graph" title="Link to this definition"></a></dt>
+<dd><p>Generate a complete bipartite graph.</p>
+<p>In a complete bipartite graph, every vertex in the top set is connected
+to every vertex in the bottom set, resulting in n_top * n_bottom edges.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_top</strong> – int
+Number of vertices in the top set.</p></li>
+<li><p><strong>n_bottom</strong> – int
+Number of vertices in the bottom set.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_balanced_tree">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_balanced_tree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">r</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">h</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_balanced_tree"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_balanced_tree" title="Link to this definition"></a></dt>
+<dd><p>Generate a balanced r-ary tree of height h.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>r</strong> – int
+Branching factor of the tree.</p></li>
+<li><p><strong>h</strong> – int
+Height of the tree.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_random_regular">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_random_regular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_random_regular"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_random_regular" title="Link to this definition"></a></dt>
+<dd><p>Generate a random regular graph where each node has degree d.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>d</strong> – int
+Degree of each vertex.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_scale_free">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_scale_free</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.41</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.54</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_scale_free"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_scale_free" title="Link to this definition"></a></dt>
+<dd><p>Generate a scale-free graph using Holme and Kim algorithm.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>alpha</strong> – float
+Parameters for the scale-free graph generation.</p></li>
+<li><p><strong>beta</strong> – float
+Parameters for the scale-free graph generation.</p></li>
+<li><p><strong>gamma</strong> – float
+Parameters for the scale-free graph generation.</p></li>
+<li><p><strong>delta_in</strong> – float
+Parameters for the scale-free graph generation.</p></li>
+<li><p><strong>delta_out</strong> – float
+Parameters for the scale-free graph generation.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_geometric">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_geometric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_geometric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_geometric" title="Link to this definition"></a></dt>
+<dd><p>Generate a random geometric graph in a unit cube.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>radius</strong> – float
+Distance threshold for connecting vertices.</p></li>
+<li><p><strong>dim</strong> – int
+Dimension of the space.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_caveman">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_caveman</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_caveman"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_caveman" title="Link to this definition"></a></dt>
+<dd><p>Generate a caveman graph with l cliques of size k.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>l</strong> – int
+Number of cliques.</p></li>
+<li><p><strong>k</strong> – int
+Size of each clique.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_relaxed_caveman">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_relaxed_caveman</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">l</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_relaxed_caveman"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_relaxed_caveman" title="Link to this definition"></a></dt>
+<dd><p>Generate a relaxed caveman graph with l cliques of size k,
+and a rewiring probability p.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>l</strong> – int
+Number of cliques.</p></li>
+<li><p><strong>k</strong> – int
+Size of each clique.</p></li>
+<li><p><strong>p</strong> – float
+Rewiring probability.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="graphem_rapids.generators.generate_delaunay_triangulation">
+<span class="sig-prename descclassname"><span class="pre">graphem_rapids.generators.</span></span><span class="sig-name descname"><span class="pre">generate_delaunay_triangulation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/graphem_rapids/generators.html#generate_delaunay_triangulation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphem_rapids.generators.generate_delaunay_triangulation" title="Link to this definition"></a></dt>
+<dd><p>Generate a Delaunay triangulation graph.</p>
+<p>Vertices are randomly placed in a 2D unit square, and edges are created
+based on the Delaunay triangulation of these points. The resulting graph
+has planar structure with triangular faces.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – int
+Number of vertices.</p></li>
+<li><p><strong>seed</strong> – int
+Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>scipy.sparse.csr_matrix</dt><dd><p>Sparse adjacency matrix (n × n).</p>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>adjacency</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="quickstart.html" class="btn btn-neutral float-left" title="Quick start" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="generators.html" class="btn btn-neutral float-right" title="Graph Generators" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Alexander Kolpakov and Igor Rivin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

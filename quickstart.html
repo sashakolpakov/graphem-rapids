@@ -1,0 +1,205 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick start &mdash; GraphEm RAPIDS documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=6fc6f92e"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API reference" href="api.html" />
+    <link rel="prev" title="GraphEm RAPIDS" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GraphEm Rapids
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User guide</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quick start</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#requirements">Requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#device-policy">Device policy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adjacency-input">Adjacency input</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#edge-list-input">Edge-list input</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#failure-and-diagnostics">Failure and diagnostics</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="generators.html">Graph Generators</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GraphEm Rapids</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Quick start</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/quickstart.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="quick-start">
+<h1>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h1>
+<section id="requirements">
+<h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading"></a></h2>
+<p>The canonical qualified environment uses Python 3.11, CUDA 12.9, Torch 2.11,
+CuPy 14.1.1, and cuVS 26.06.  Install the CUDA-matched Torch wheel before the
+package:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>python3.11<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<span class="gp">$ </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<span class="gp">$ </span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+<span class="gp">$ </span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="nv">torch</span><span class="o">==</span><span class="m">2</span>.11.0<span class="w"> </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cu129
+<span class="gp">$ </span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="device-policy">
+<h2>Device policy<a class="headerlink" href="#device-policy" title="Link to this heading"></a></h2>
+<p>Production and benchmark runs pin <code class="docutils literal notranslate"><span class="pre">device=&quot;cuda&quot;</span></code>.  An explicit CUDA request
+fails if Torch CUDA is unavailable and never downgrades.  <code class="docutils literal notranslate"><span class="pre">device=&quot;cpu&quot;</span></code> and
+an automatic CPU selection use the same Torch spectral tensor function, emit a
+<code class="docutils literal notranslate"><span class="pre">RuntimeWarning</span></code>, and record the selection reason.  They are small-fixture
+spectral diagnostics only: midpoint search and force refinement still require
+CuPy, cupyx, cuVS, and CUDA.</p>
+</section>
+<section id="adjacency-input">
+<h2>Adjacency input<a class="headerlink" href="#adjacency-input" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">graphem_rapids</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gr</span>
+
+<span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_er</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1_000</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">embedder</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">GraphEmbedder</span><span class="p">(</span>
+    <span class="n">adjacency</span><span class="o">=</span><span class="n">adjacency</span><span class="p">,</span>
+    <span class="n">n_components</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">L_min</span><span class="o">=</span><span class="mf">40.0</span><span class="p">,</span>
+    <span class="n">k_attr</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">k_inter</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">n_neighbors</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+    <span class="n">sample_size</span><span class="o">=</span><span class="mi">2_048</span><span class="p">,</span>
+    <span class="n">midpoint_query_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">embedder</span><span class="o">.</span><span class="n">run_layout</span><span class="p">(</span><span class="n">num_iterations</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+
+<span class="n">positions</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_positions</span><span class="p">()</span>
+<span class="n">scores</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_scores</span><span class="p">()</span>
+<span class="n">farthest</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_top_k</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+<span class="n">diagnostics</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_diagnostics</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+<section id="edge-list-input">
+<h2>Edge-list input<a class="headerlink" href="#edge-list-input" title="Link to this heading"></a></h2>
+<p>Supply exactly one of <code class="docutils literal notranslate"><span class="pre">adjacency</span></code> and <code class="docutils literal notranslate"><span class="pre">edges</span></code>.  An edge list also requires
+the total vertex count:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">embedder</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">GraphEmbedder</span><span class="p">(</span>
+    <span class="n">edges</span><span class="o">=</span><span class="n">edge_array</span><span class="p">,</span>
+    <span class="n">n_vertices</span><span class="o">=</span><span class="n">vertex_count</span><span class="p">,</span>
+    <span class="n">n_components</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">n_neighbors</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+    <span class="n">sample_size</span><span class="o">=</span><span class="mi">2_048</span><span class="p">,</span>
+    <span class="n">midpoint_query_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Edges must contain integer vertex IDs in <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">n_vertices)</span></code> and must not
+contain loops or duplicate undirected pairs.  For both input forms,
+<code class="docutils literal notranslate"><span class="pre">sample_size</span></code> cannot exceed the edge count and <code class="docutils literal notranslate"><span class="pre">n_neighbors</span></code> must be
+strictly smaller than the edge count.  Spectral initialization additionally
+requires <code class="docutils literal notranslate"><span class="pre">n_vertices</span> <span class="pre">&gt;=</span> <span class="pre">3</span> <span class="pre">*</span> <span class="pre">(n_components</span> <span class="pre">+</span> <span class="pre">1)</span></code>.  Exact midpoint queries are
+submitted in batches of at most 64.  <code class="docutils literal notranslate"><span class="pre">midpoint_query_batch_size</span></code> can select a
+smaller positive batch but cannot exceed that canonical bound.</p>
+</section>
+<section id="failure-and-diagnostics">
+<h2>Failure and diagnostics<a class="headerlink" href="#failure-and-diagnostics" title="Link to this heading"></a></h2>
+<p>Construction fails on a missing GPU dependency, invalid graph, unavailable
+requested CUDA device, nonconverged spectral solve, or failed numerical gate.
+Midpoint search also fails closed if cuVS repeats a global edge ID within one
+query row; this uniqueness check precedes negative-distance repair.
+<code class="docutils literal notranslate"><span class="pre">get_diagnostics()</span></code> records the requested and selected spectral devices,
+solver protocol, eigenvalues, residual, query-edge hashes, midpoint-search
+receipts, iteration count, and primitive timings.  The midpoint receipt includes
+the configured/effective batch size, hard policy bound, search-call count,
+submitted batch-size histogram, call-width and resolved-query-width
+histograms, and the highest device-wide bytes observed at declared CUDA memory
+checkpoints.  Benchmark qualification also records an external GPU-memory
+high-water mark.  The receipt binds the rowwise unique-global-edge-ID
+validation policy used before negative-distance repair.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="GraphEm RAPIDS" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="API reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Alexander Kolpakov and Igor Rivin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

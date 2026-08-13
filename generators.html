@@ -1,0 +1,343 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph Generators &mdash; GraphEm RAPIDS documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=6fc6f92e"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="API reference" href="api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GraphEm Rapids
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Graph Generators</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#random-graphs">Random Graphs</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#erdos-renyi">Erdős-Rényi</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#random-regular">Random Regular</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#scale-free-graphs">Scale-Free Graphs</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#barabasi-albert">Barabási-Albert</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#general-scale-free">General Scale-Free</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#power-law-cluster">Power-Law Cluster</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#small-world-graphs">Small-World Graphs</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#watts-strogatz">Watts-Strogatz</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#community-structures">Community Structures</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#stochastic-block-model">Stochastic Block Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#caveman-graph">Caveman Graph</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#relaxed-caveman">Relaxed Caveman</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#bipartite-graphs">Bipartite Graphs</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#random-bipartite">Random Bipartite</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#complete-bipartite">Complete Bipartite</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#geometric-graphs">Geometric Graphs</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#random-geometric">Random Geometric</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#delaunay-triangulation">Delaunay Triangulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#road-network">Road Network</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#tree-structures">Tree Structures</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#balanced-tree">Balanced Tree</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#complete-example">Complete Example</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GraphEm Rapids</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Graph Generators</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/generators.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="graph-generators">
+<h1>Graph Generators<a class="headerlink" href="#graph-generators" title="Link to this heading"></a></h1>
+<p>All generators return symmetric <code class="docutils literal notranslate"><span class="pre">scipy.sparse.csr_matrix</span></code> adjacency matrices.
+The canonical embedder separately validates that an input is unweighted,
+loop-free, and duplicate-free before transferring graph data to CUDA.  Most
+generators return a binary matrix directly; the general scale-free generator
+retains NetworkX multiedge multiplicity and therefore needs the explicit
+binarization shown below before use with <code class="docutils literal notranslate"><span class="pre">GraphEmbedder</span></code>.</p>
+<section id="random-graphs">
+<h2>Random Graphs<a class="headerlink" href="#random-graphs" title="Link to this heading"></a></h2>
+<section id="erdos-renyi">
+<h3>Erdős-Rényi<a class="headerlink" href="#erdos-renyi" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_er</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Random edges with probability <em>p</em>.</p>
+</section>
+<section id="random-regular">
+<h3>Random Regular<a class="headerlink" href="#random-regular" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_random_regular</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Every vertex has exactly degree <em>d</em>.</p>
+</section>
+</section>
+<section id="scale-free-graphs">
+<h2>Scale-Free Graphs<a class="headerlink" href="#scale-free-graphs" title="Link to this heading"></a></h2>
+<section id="barabasi-albert">
+<h3>Barabási-Albert<a class="headerlink" href="#barabasi-albert" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_ba</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Preferential attachment model.</p>
+</section>
+<section id="general-scale-free">
+<h3>General Scale-Free<a class="headerlink" href="#general-scale-free" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_scale_free</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="n">adjacency</span><span class="o">.</span><span class="n">data</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">1</span>
+</pre></div>
+</div>
+<p>NetworkX scale-free model, converted to an undirected simple graph by dropping
+edge direction, removing self-loops, and explicitly binarizing any retained
+parallel-edge counts.</p>
+</section>
+<section id="power-law-cluster">
+<h3>Power-Law Cluster<a class="headerlink" href="#power-law-cluster" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_power_cluster</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Power-law degree distribution with triangle formation.</p>
+</section>
+</section>
+<section id="small-world-graphs">
+<h2>Small-World Graphs<a class="headerlink" href="#small-world-graphs" title="Link to this heading"></a></h2>
+<section id="watts-strogatz">
+<h3>Watts-Strogatz<a class="headerlink" href="#watts-strogatz" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_ws</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Ring lattice with random rewiring.</p>
+</section>
+</section>
+<section id="community-structures">
+<h2>Community Structures<a class="headerlink" href="#community-structures" title="Link to this heading"></a></h2>
+<section id="stochastic-block-model">
+<h3>Stochastic Block Model<a class="headerlink" href="#stochastic-block-model" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_sbm</span><span class="p">(</span>
+    <span class="n">n_per_block</span><span class="o">=</span><span class="mi">75</span><span class="p">,</span>
+    <span class="n">num_blocks</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+    <span class="n">p_in</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span>   <span class="c1"># Within-block edge probability</span>
+    <span class="n">p_out</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>  <span class="c1"># Between-block edge probability</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">42</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>With labels:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_sbm</span><span class="p">(</span>
+    <span class="n">n_per_block</span><span class="o">=</span><span class="mi">75</span><span class="p">,</span>
+    <span class="n">num_blocks</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+    <span class="n">labels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">42</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="caveman-graph">
+<h3>Caveman Graph<a class="headerlink" href="#caveman-graph" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_caveman</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><em>l</em> cliques of size <em>k</em>.</p>
+</section>
+<section id="relaxed-caveman">
+<h3>Relaxed Caveman<a class="headerlink" href="#relaxed-caveman" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_relaxed_caveman</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Caveman graph with rewiring probability <em>p</em>.</p>
+<p>The current implementation does not forward <code class="docutils literal notranslate"><span class="pre">seed</span></code> to NetworkX’s rewiring
+routine.  Do not use this generator for a reproduction cell that requires a
+seeded input until that source-level issue is corrected and qualified.</p>
+</section>
+</section>
+<section id="bipartite-graphs">
+<h2>Bipartite Graphs<a class="headerlink" href="#bipartite-graphs" title="Link to this heading"></a></h2>
+<section id="random-bipartite">
+<h3>Random Bipartite<a class="headerlink" href="#random-bipartite" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_bipartite_graph</span><span class="p">(</span>
+    <span class="n">n_top</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+    <span class="n">n_bottom</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">p</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>       <span class="c1"># Edge probability</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">42</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="complete-bipartite">
+<h3>Complete Bipartite<a class="headerlink" href="#complete-bipartite" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_complete_bipartite_graph</span><span class="p">(</span><span class="n">n_top</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">n_bottom</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Every vertex in top set connects to every vertex in bottom set (K_{n,m}).</p>
+</section>
+</section>
+<section id="geometric-graphs">
+<h2>Geometric Graphs<a class="headerlink" href="#geometric-graphs" title="Link to this heading"></a></h2>
+<section id="random-geometric">
+<h3>Random Geometric<a class="headerlink" href="#random-geometric" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_geometric</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Vertices in unit cube, edges within distance <em>radius</em>.</p>
+</section>
+<section id="delaunay-triangulation">
+<h3>Delaunay Triangulation<a class="headerlink" href="#delaunay-triangulation" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_delaunay_triangulation</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Planar graph from Delaunay triangulation of random 2D points.</p>
+</section>
+<section id="road-network">
+<h3>Road Network<a class="headerlink" href="#road-network" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_road_network</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>2D grid graph.</p>
+</section>
+</section>
+<section id="tree-structures">
+<h2>Tree Structures<a class="headerlink" href="#tree-structures" title="Link to this heading"></a></h2>
+<section id="balanced-tree">
+<h3>Balanced Tree<a class="headerlink" href="#balanced-tree" title="Link to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_balanced_tree</span><span class="p">(</span><span class="n">r</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><em>r</em>-ary tree of height <em>h</em>.</p>
+</section>
+</section>
+<section id="complete-example">
+<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading"></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">graphem_rapids</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gr</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">networkx</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nx</span>
+
+<span class="c1"># Generate graph</span>
+<span class="n">adjacency</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_sbm</span><span class="p">(</span>
+    <span class="n">n_per_block</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">num_blocks</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+    <span class="n">p_in</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+    <span class="n">p_out</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">42</span>
+<span class="p">)</span>
+
+<span class="c1"># Compute the canonical CUDA embedding</span>
+<span class="n">embedder</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">GraphEmbedder</span><span class="p">(</span>
+    <span class="n">adjacency</span><span class="o">=</span><span class="n">adjacency</span><span class="p">,</span>
+    <span class="n">n_components</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">n_neighbors</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+    <span class="n">sample_size</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>
+    <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">embedder</span><span class="o">.</span><span class="n">run_layout</span><span class="p">(</span><span class="n">num_iterations</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+
+<span class="c1"># Visualize with community colors</span>
+<span class="n">adjacency_with_labels</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">gr</span><span class="o">.</span><span class="n">generate_sbm</span><span class="p">(</span>
+    <span class="n">n_per_block</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">num_blocks</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+    <span class="n">labels</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">seed</span><span class="o">=</span><span class="mi">42</span>
+<span class="p">)</span>
+<span class="n">positions</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_positions</span><span class="p">()</span>
+<span class="n">scores</span> <span class="o">=</span> <span class="n">embedder</span><span class="o">.</span><span class="n">get_scores</span><span class="p">()</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">positions</span></code> and <code class="docutils literal notranslate"><span class="pre">labels</span></code> share vertex order and can be passed to a plotting
+library chosen by the caller.  <code class="docutils literal notranslate"><span class="pre">GraphEmbedder</span></code> does not provide a separate
+visualization backend.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api.html" class="btn btn-neutral float-left" title="API reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Alexander Kolpakov and Igor Rivin.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
