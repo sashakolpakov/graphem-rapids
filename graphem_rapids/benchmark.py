@@ -11,7 +11,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy import stats
 
-from .embedder import GraphEmbedder
+from .embedder import GraphEmbedder, MIDPOINT_QUERY_BATCH_SIZE_BOUND
 
 
 def _graph_fingerprint(adjacency):
@@ -82,6 +82,7 @@ def run_benchmark(
     k_inter=0.1,
     n_neighbors=15,
     sample_size=512,
+    midpoint_query_batch_size=MIDPOINT_QUERY_BATCH_SIZE_BOUND,
     num_iterations=40,
     seed=0,
     top_k=50,
@@ -104,6 +105,7 @@ def run_benchmark(
         k_inter=k_inter,
         n_neighbors=n_neighbors,
         sample_size=sample_size,
+        midpoint_query_batch_size=midpoint_query_batch_size,
         seed=seed,
     )
     layout_started = time.perf_counter()
@@ -134,6 +136,7 @@ def run_benchmark(
             "k_inter": k_inter,
             "n_neighbors": n_neighbors,
             "sample_size": sample_size,
+            "midpoint_query_batch_size": midpoint_query_batch_size,
             "num_iterations": num_iterations,
             "seed": seed,
             "top_k": count,

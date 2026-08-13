@@ -14,6 +14,13 @@
 - Corrected midpoint neighbours to use global edge IDs, identity-based self
   removal, and distance/ID ordering with adaptive exact overquery at tied
   cutoffs.
+- Bounded every exact cuVS midpoint-search call to at most 64 queries, exposed
+  smaller batch selection, and receipted search calls, submitted batch sizes,
+  adaptive widths, and checkpointed device-memory high water without changing
+  neighbor semantics.
+- Added a fail-closed rowwise uniqueness check for returned global edge IDs
+  before bounded negative-distance repair, with its policy recorded in
+  diagnostics.
 - Corrected the spring to restoring Hooke dynamics and retained strict xy
   crossings, all-coordinate centroid force, full updates, and per-coordinate
   population normalization.

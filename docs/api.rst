@@ -8,7 +8,11 @@ GraphEmbedder
 SciPy-compatible adjacency matrix or a CUDA/array-compatible edge list.  The
 ``device`` keyword controls the shared Torch spectral function; the remaining
 layout path is always CUDA/RAPIDS.  Production calls should pass
-``device="cuda"`` explicitly.
+``device="cuda"`` explicitly.  ``midpoint_query_batch_size`` configures exact
+cuVS query batches from 1 through the canonical hard ceiling of 64; it does not
+change the midpoint reference, search method, adaptive cutoff proof, or
+distance/global-edge-ID result order.  Each returned query row must contain
+unique global edge IDs; validation occurs before negative-distance repair.
 
 .. autoclass:: graphem_rapids.GraphEmbedder
    :members:
