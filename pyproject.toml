@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "graphem-rapids"
-version = "0.2.1"
-description = "A graph embedding library with PyTorch and RAPIDS acceleration"
+version = "0.3.0.dev0"
+description = "The canonical CUDA/RAPIDS implementation of GraphEm"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Alexander Kolpakov", email = "akolpakov@uaustin.org"},
     {name = "Igor Rivin", email = "rivin@temple.edu"}
@@ -21,7 +21,6 @@ keywords = [
     "centrality measures",
     "network analysis",
     "force layout",
-    "PyTorch",
     "CUDA",
     "RAPIDS"
 ]
@@ -31,44 +30,45 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Operating System :: POSIX :: Linux",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.0.0",
+    "cuvs-cu12>=26.6,<26.7",
+    "cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0,<15",
     "numpy>=1.21.0",
     "matplotlib>=3.5.0",
     "networkx>=2.6.0",
     "pandas>=1.3.0",
     "plotly>=5.5.0",
     "scipy>=1.7.0",
-    "ndlib>=5.1.0",
+    "torch>=2.11,<2.12",
     "loguru>=0.6.0",
     "requests>=2.25.0",
-    "line_profiler>=4.0.0",
-    "snakeviz>=2.2.0",
-    "tensorboard>=2.10.0",
     "tqdm>=4.66.0",
-    "pyinstrument>=5.0.0",
-    "tabulate>=0.9.0"
 ]
 
 [project.optional-dependencies]
-cuda = [
-    "cupy-cuda12x>=10.0.0",
-    "pykeops>=2.1.0"
-]
-rapids = [
+rapids-full = [
     "cudf-cu12",
+    "cugraph-cu12",
     "cuml-cu12",
-    "cuvs-cu12",
-    "cupy-cuda12x>=10.0.0",
-    "pykeops>=2.1.0"
+    "cuvs-cu12>=26.6,<26.7",
+    "cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0,<15",
+]
+influence = [
+    "ndlib>=5.1.0",
+]
+profiling = [
+    "line_profiler>=4.0.0",
+    "snakeviz>=2.2.0",
+    "tensorboard>=2.10.0",
+    "pyinstrument>=5.0.0",
+    "tabulate>=0.9.0",
 ]
 docs = [
     "sphinx>=4.0.0",
@@ -96,14 +96,20 @@ dev = [
 ]
 all = [
     "cudf-cu12",
+    "cugraph-cu12",
     "cuml-cu12",
-    "cuvs-cu12",
-    "cupy-cuda12x>=10.0.0",
-    "pykeops>=2.1.0",
+    "cuvs-cu12>=26.6,<26.7",
+    "cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0,<15",
+    "ndlib>=5.1.0",
     "sphinx>=4.0.0",
     "sphinx_rtd_theme>=1.0.0",
     "sphinx-autodoc-typehints>=1.12.0",
     "myst-parser>=0.17.0",
+    "line_profiler>=4.0.0",
+    "snakeviz>=2.2.0",
+    "tensorboard>=2.10.0",
+    "pyinstrument>=5.0.0",
+    "tabulate>=0.9.0",
     "pytest>=6.0.0",
     "pytest-cov>=2.12.0",
     "pytest-xdist>=2.3.0"
@@ -117,10 +123,7 @@ Repository = "https://github.com/sashakolpakov/graphem-rapids"
 Paper = "https://arxiv.org/abs/2506.07435"
 "Original GraphEm" = "https://github.com/sashakolpakov/graphem"
 
-[project.scripts]
-graphem-rapids-info = "graphem_rapids.utils.backend_selection:main"
-
 [tool.setuptools]
-packages = {find = {exclude = ["tests*", "docs*", "examples*", "benchmarks*", "data*", "build*"]}}
+packages = {find = {include = ["graphem_rapids*"]}}
 include-package-data = true
 zip-safe = false

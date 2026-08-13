@@ -1,7 +1,12 @@
 Graph Generators
 ================
 
-All generators return scipy sparse adjacency matrices in CSR format.
+All generators return symmetric ``scipy.sparse.csr_matrix`` adjacency matrices.
+The canonical embedder separately validates that an input is unweighted,
+loop-free, and duplicate-free before transferring graph data to CUDA.  Most
+generators return a binary matrix directly; the general scale-free generator
+retains NetworkX multiedge multiplicity and therefore needs the explicit
+binarization shown below before use with ``GraphEmbedder``.
 
 Random Graphs
 -------------
@@ -36,14 +41,17 @@ Barabási-Albert
 
 Preferential attachment model.
 
-Scale-Free
-~~~~~~~~~~
+General Scale-Free
+~~~~~~~~~~~~~~~~~~
 
 ::
 
     adjacency = gr.generate_scale_free(n=100, seed=42)
+    adjacency.data[:] = 1
 
-Holme-Kim algorithm with configurable parameters.
+NetworkX scale-free model, converted to an undirected simple graph by dropping
+edge direction, removing self-loops, and explicitly binarizing any retained
+parallel-edge counts.
 
 Power-Law Cluster
 ~~~~~~~~~~~~~~~~~
@@ -108,6 +116,10 @@ Relaxed Caveman
     adjacency = gr.generate_relaxed_caveman(l=10, k=10, p=0.1, seed=42)
 
 Caveman graph with rewiring probability *p*.
+
+The current implementation does not forward ``seed`` to NetworkX's rewiring
+routine.  Do not use this generator for a reproduction cell that requires a
+seeded input until that source-level issue is corrected and qualified.
 
 Bipartite Graphs
 ----------------
@@ -192,8 +204,14 @@ Complete Example
         seed=42
     )
 
-    # Compute embedding
-    embedder = gr.create_graphem(adjacency, n_components=2)
+    # Compute the canonical CUDA embedding
+    embedder = gr.GraphEmbedder(
+        adjacency=adjacency,
+        n_components=2,
+        n_neighbors=15,
+        sample_size=256,
+        device="cuda",
+    )
     embedder.run_layout(num_iterations=50)
 
     # Visualize with community colors
@@ -203,4 +221,9 @@ Complete Example
         labels=True,
         seed=42
     )
-    embedder.display_layout(node_colors=labels)
+    positions = embedder.get_positions()
+    scores = embedder.get_scores()
+
+``positions`` and ``labels`` share vertex order and can be passed to a plotting
+library chosen by the caller.  ``GraphEmbedder`` does not provide a separate
+visualization backend.

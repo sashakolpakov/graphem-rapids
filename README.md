@@ -1,232 +1,155 @@
-<p align="center">
-  <img src="images/logo.png" alt="graphem rapids logo" height="120"/>
-</p>
+# GraphEm RAPIDS
 
-<h1 align="center">GraphEm Rapids: High-Performance Graph Embedding</h1>
+GraphEm embeds an undirected graph in a low-dimensional Euclidean space and
+scores each vertex by its distance from the origin. This repository exposes one
+canonical implementation: a Torch normalized-Laplacian initializer followed by
+CuPy/cuVS force refinement on CUDA.
 
-<p align="center">
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/>
-  </a>
-  <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"/>
-  </a>
-  <a href="https://pytorch.org/">
-    <img src="https://img.shields.io/badge/PyTorch-2.0+-red.svg" alt="PyTorch 2.0+"/>
-  </a>
-  </p>
+## Execution contract
 
-  <p align="center">
-  <a href="https://pepy.tech/projects/graphem-rapids">
-    <img alt="Pepy Total Downloads" src="https://img.shields.io/pepy/dt/graphem-rapids">
-  </a>
-  <a href="https://sashakolpakov.github.io/graphem-rapids/">
-    <img src="https://img.shields.io/website-up-down-green-red/https/sashakolpakov.github.io/graphem-rapids?label=API%20Documentation" alt="Docs Status"/>
-  </a>
-</p>
+`GraphEmbedder` always requires CuPy, cupyx, cuVS, and a working CUDA device for
+graph storage, midpoint search, forces, and layout updates. Its `device`
+argument selects the device used by the shared Torch spectral function:
 
-High-performance [GraphEm](https://github.com/sashakolpakov/graphem) implementation using PyTorch and RAPIDS cuVS. Force-directed layout with geometric intersection detection produces embeddings that correlate strongly with centrality measures.
+- `device="cuda"` is the default and the required production/benchmark mode;
+- an unavailable explicit CUDA request is an error and never downgrades;
+- explicit `device="cpu"` uses the same Torch tensor implementation and emits a
+  `RuntimeWarning`; and
+- `device="auto"` selects CUDA when available and otherwise selects CPU with a
+  `RuntimeWarning` and a recorded reason.
 
-## Features
+CPU spectral selection is a small-fixture diagnostic, not a CPU layout backend.
+There is no second eigensolver or alternate layout implementation.
 
-- **Unified API**: Scipy sparse adjacency matrices, sklearn-style parameters (`n_components`, `n_neighbors`)
-- **Multiple Backends**: PyTorch (1K-100K vertices), RAPIDS cuVS (100K+ vertices), automatic selection
-- **GPU Acceleration**: CUDA support, memory-efficient chunking, automatic CPU fallback
-- **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
-- **Influence Maximization**: Fast embedding-based seed selection
+## Canonical algorithm
+
+For every run, GraphEm:
+
+1. validates one unweighted, undirected, loop-free, duplicate-free graph;
+2. builds the float64 symmetric normalized Laplacian with the declared isolate
+   convention and solves its shifted sparse eigenspace with
+   `torch.lobpcg(method="ortho")`;
+3. checks finite eigenpairs, residual norms, and orthogonality before dropping
+   the first eigenvector;
+4. draws one deterministic uniform query-edge subset without replacement using
+   the recorded PCG64/Floyd recipe;
+5. recomputes every edge midpoint on every iteration and performs exact cuVS
+   brute-force search against the complete midpoint array;
+6. removes self-neighbours by global edge identity and completes cutoff ties in
+   increasing global edge-ID order;
+7. applies restoring spring forces and strict crossing forces in the first two
+   coordinates, with centroid repulsion in every embedding component;
+8. takes the full force step and normalizes each coordinate by its population
+   standard deviation; and
+9. ranks vertices by decreasing Euclidean radius, breaking score ties by vertex
+   ID.
+
+Both force systems are mandatory. There is no learning-rate multiplier,
+displacement clipping, initial edge-length rescaling, approximate midpoint
+index, cached neighbour set, alternate score orientation, or alternate execution
+path.
 
 ## Installation
 
+The canonical qualified environment uses Python 3.11, CUDA 12.9, Torch 2.11,
+CuPy 14.1.1, and cuVS 26.06. Install the CUDA-matched Torch wheel before the
+package so dependency resolution does not select a different CUDA runtime:
+
 ```bash
-pip install graphem-rapids              # PyTorch backend
-pip install graphem-rapids[cuda]        # + CUDA support
-pip install graphem-rapids[rapids]      # + RAPIDS cuVS
-pip install graphem-rapids[all]         # Everything
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
+python -m pip install -e .
 ```
 
-## Quick Start [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sashakolpakov/graphem-rapids/blob/main/examples/graphem_rapids_notebook.ipynb)
+Any proposed dependency update must pass the same graph, finiteness, spectral
+residual, and orthogonality gates before it is treated as supported. Production
+claims must record the exact source, image, dependency, CUDA, and GPU identities.
+
+## Usage
 
 ```python
 import graphem_rapids as gr
 
-# Generate graph (returns sparse adjacency matrix)
-adjacency = gr.generate_er(n=1000, p=0.01)
+adjacency = gr.generate_er(n=1_000, p=0.1, seed=0)
+embedder = gr.GraphEmbedder(
+    adjacency=adjacency,
+    n_components=3,
+    L_min=40.0,
+    k_attr=1.0,
+    k_inter=1.0,
+    n_neighbors=15,
+    sample_size=2_048,
+    seed=0,
+    device="cuda",
+)
+embedder.run_layout(num_iterations=30)
 
-# Create embedder (automatic backend selection)
-embedder = gr.create_graphem(adjacency, n_components=3)
-
-# Run layout
-embedder.run_layout(num_iterations=50)
-
-# Get positions and visualize
-positions = embedder.get_positions()  # numpy array (n, d)
-embedder.display_layout()             # 2D or 3D plot
+positions = embedder.get_positions()
+scores = embedder.get_scores()
+farthest_vertices = embedder.get_top_k(50)
+diagnostics = embedder.get_diagnostics()
 ```
 
-## Backend Selection
+The edge-list interface is explicit:
 
-### Automatic (Recommended)
 ```python
-embedder = gr.create_graphem(adjacency, n_components=3)
-```
-
-### Explicit PyTorch
-```python
-embedder = gr.GraphEmbedderPyTorch(
-    adjacency, n_components=3, device='cuda',
-    L_min=1.0, k_attr=0.2, k_inter=0.5, n_neighbors=10,
-    batch_size=None  # Automatic (or manual: 1024)
+embedder = gr.GraphEmbedder(
+    edges=edge_array,
+    n_vertices=vertex_count,
+    n_components=3,
+    n_neighbors=15,
+    sample_size=2_048,
+    device="cuda",
 )
 ```
 
-### Explicit RAPIDS cuVS
-```python
-embedder = gr.GraphEmbedderCuVS(
-    adjacency, n_components=3,
-    index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
-    sample_size=1024, batch_size=None
-)
-```
+Exactly one of `adjacency` and `edges` is accepted. An edge list must use
+integer vertex IDs in `[0, n_vertices)`. For either input form,
+`sample_size <= n_edges`, `n_neighbors < n_edges`, and
+`n_vertices >= 3 * (n_components + 1)` must hold.
 
-**Index Types**: `brute_force` (<100K), `ivf_flat` (100K-1M), `ivf_pq` (>1M vertices)
+## Reproduction policy
 
-### Check Backends
-```python
-info = gr.get_backend_info()
-print(f"CUDA: {info['cuda_available']}, Recommended: {info['recommended_backend']}")
-```
+The primary golden and scaling matrices are untuned. Their graph preprocessing,
+dimensions, force parameters, query sizes, iteration counts, and seeds are
+frozen before result inspection. Each cell emits an immutable success or typed
+failure record with raw artifacts and checksums; any cell can later be replaced
+by a new linked attempt without changing unrelated cells.
 
-## Configuration
+Tuning and graph discovery begin only after the untuned baseline is sealed.
+They use disjoint cell identities, retain the paired baseline, and are reported
+as post-hoc until a separate confirmation set supports a default-performance
+claim. Normal floating-point drift is measured with residual, orthogonality,
+eigenvalue, and subspace diagnostics; byte equality is provenance, not a
+numerical acceptance gate.
 
-**Environment Variables:**
-```bash
-export GRAPHEM_BACKEND=pytorch        # Force backend
-export GRAPHEM_PREFER_GPU=true        # Prefer GPU
-export GRAPHEM_MEMORY_LIMIT=8         # GB
-export GRAPHEM_VERBOSE=true
-```
+Comparator, influence, and scaling failures remain typed outcomes. A failed
+method is not replaced, omitted, or reported with another method's values.
 
-**Programmatic:**
-```python
-from graphem_rapids.utils.backend_selection import BackendConfig, get_optimal_backend
+## Issue lineage
 
-config = BackendConfig(n_vertices=50000, force_backend='cuvs', memory_limit=16.0)
-backend = get_optimal_backend(config)
-embedder = gr.create_graphem(adjacency, backend=backend)
-```
+- [Torch/CUDA spectral initializer issue #9](https://github.com/sashakolpakov/graphem/issues/9)
+- [Global midpoint-ID issue #6](https://github.com/sashakolpakov/graphem-rapids/issues/6)
+- [Original GraphEm midpoint-ID issue #7](https://github.com/sashakolpakov/graphem/issues/7)
 
-## Graph Generators
-
-All generators return scipy sparse adjacency matrices:
-
-```python
-# Random
-gr.generate_er(n=1000, p=0.01, seed=42)
-gr.generate_random_regular(n=100, d=3, seed=42)
-
-# Scale-free & small-world
-gr.generate_ba(n=300, m=3, seed=42)             # Barabási-Albert
-gr.generate_ws(n=1000, k=6, p=0.3, seed=42)     # Watts-Strogatz
-gr.generate_scale_free(n=100, seed=42)
-
-# Community structures
-gr.generate_sbm(n_per_block=75, num_blocks=4, p_in=0.15, p_out=0.01, seed=42)
-gr.generate_caveman(l=10, k=10)
-gr.generate_relaxed_caveman(l=10, k=10, p=0.1, seed=42)
-
-# Bipartite
-gr.generate_bipartite_graph(n_top=50, n_bottom=100, p=0.2, seed=42)
-gr.generate_complete_bipartite_graph(n_top=50, n_bottom=100)
-
-# Geometric
-gr.generate_geometric(n=100, radius=0.2, dim=2, seed=42)
-gr.generate_delaunay_triangulation(n=100, seed=42)
-gr.generate_road_network(width=30, height=30)   # 2D grid
-
-# Trees
-gr.generate_balanced_tree(r=2, h=10)
-```
-
-## Influence Maximization
-
-```python
-adjacency = gr.generate_er(n=1000, p=0.01)
-embedder = gr.create_graphem(adjacency, n_components=3)
-embedder.run_layout(num_iterations=50)
-
-# Fast: embedding-based selection
-seeds = gr.graphem_seed_selection(embedder, k=10)
-
-# Evaluate with Independent Cascade model
-import networkx as nx
-G = nx.from_scipy_sparse_array(adjacency)
-influence, _ = gr.ndlib_estimated_influence(G, seeds, p=0.1, iterations_count=100)
-
-# Compare with greedy (slow, optimal)
-greedy_seeds, _ = gr.greedy_seed_selection(G, k=10, p=0.1)
-```
-
-## Advanced
-
-### Memory Management
-```python
-from graphem_rapids.utils.memory_management import MemoryManager, get_gpu_memory_info
-
-mem_info = get_gpu_memory_info()
-print(f"GPU: {mem_info['free']:.1f}GB free / {mem_info['total']:.1f}GB total")
-
-adjacency = gr.generate_er(n=1000, p=0.01)
-with MemoryManager(cleanup_on_exit=True):
-    embedder = gr.create_graphem(adjacency)
-    embedder.run_layout(50)
-```
-
-### Batch Size Tuning
-```python
-from graphem_rapids.utils.memory_management import get_optimal_chunk_size
-
-adjacency = gr.generate_er(n=1000, p=0.01)
-
-# Automatic (recommended)
-embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=None)
-
-# Manual
-embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=1024)
-
-# Programmatic
-optimal = get_optimal_chunk_size(n_vertices=1000000, n_components=3, backend='pytorch')
-embedder = gr.GraphEmbedderPyTorch(adjacency, batch_size=optimal)
-```
-
-## Testing & Benchmarking
+## Development checks
 
 ```bash
-pytest                                          # Run all tests
-pytest tests/test_pytorch_backend.py            # Specific backend
-python benchmarks/run_benchmarks.py             # Performance tests
-python benchmarks/compare_backends.py --sizes 1000,10000,100000
+python -m pytest -q
+python -m pylint graphem_rapids tests
+python -m py_compile graphem_rapids/embedder.py
+sphinx-build -W --keep-going -n -b html docs /tmp/graphem-docs
+npx --yes markdownlint-cli2@0.23.2 "*.md"
 ```
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contribution guidelines.
+GPU claims require a separately sealed GPU qualification artifact. Local import,
+documentation, and small-fixture checks are not performance or scientific
+results.
 
 ## Citation
 
-[![arXiv](https://img.shields.io/badge/arXiv-2506.07435-b31b1b.svg)](https://arxiv.org/abs/2506.07435)
-
-```bibtex
-@misc{kolpakov-rivin-2025fast,
-  title={Fast Geometric Embedding for Node Influence Maximization},
-  author={Kolpakov, Alexander and Rivin, Igor},
-  year={2025},
-  eprint={2506.07435},
-  archivePrefix={arXiv},
-  primaryClass={cs.SI},
-  url={https://arxiv.org/abs/2506.07435}
-}
-```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file.
+The historical paper is [Fast Geometric Embedding for Node Influence
+Maximization](https://arxiv.org/abs/2506.07435). Revised citation metadata will
+be published with the rewritten manuscript and verified result bundle.

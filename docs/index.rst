@@ -1,81 +1,24 @@
-GraphEm Rapids Documentation
-============================
+GraphEm RAPIDS
+==============
 
-High-performance graph embedding using PyTorch and RAPIDS cuVS. Force-directed layout with geometric intersection detection.
+GraphEm RAPIDS provides one implementation of the corrected GraphEm algorithm:
+a device-parameterized Torch normalized-Laplacian start followed by CuPy/cuVS
+force refinement on CUDA.
 
-.. image:: https://img.shields.io/badge/License-MIT-blue.svg
-   :target: https://opensource.org/licenses/MIT
-.. image:: https://img.shields.io/badge/python-3.8+-blue.svg
-   :target: https://www.python.org/downloads/
-.. image:: https://img.shields.io/badge/arXiv-2506.07435-b31b1b.svg
-   :target: https://arxiv.org/abs/2506.07435
+Production runs use ``device="cuda"`` and fail if Torch CUDA is unavailable.
+The device parameter applies only to the shared Torch spectral function;
+``GraphEmbedder`` always requires the CUDA/RAPIDS stack for graph storage,
+midpoint search, forces, and updates.  Diagnostic CPU spectral selection warns
+and does not constitute a CPU layout backend.
 
-Features
---------
-
-* **Unified API**: Scipy sparse adjacency matrices, sklearn-style parameters
-* **Multiple Backends**: PyTorch (1K-100K vertices), RAPIDS cuVS (100K+ vertices)
-* **GPU Acceleration**: CUDA support, memory-efficient chunking, automatic CPU fallback
-* **Graph Generators**: Erdős-Rényi, scale-free, SBM, bipartite, Delaunay, and more
-* **Influence Maximization**: Fast embedding-based seed selection
-
-Quick Start
------------
-
-Installation::
-
-    pip install graphem-rapids              # PyTorch backend
-    pip install graphem-rapids[cuda]        # + CUDA
-    pip install graphem-rapids[rapids]      # + RAPIDS cuVS
-    pip install graphem-rapids[all]         # Everything
-
-Basic Usage::
-
-    import graphem_rapids as gr
-
-    # Generate graph
-    adjacency = gr.generate_er(n=1000, p=0.01)
-
-    # Create embedder (automatic backend selection)
-    embedder = gr.create_graphem(adjacency, n_components=3)
-
-    # Run layout
-    embedder.run_layout(num_iterations=50)
-
-    # Get positions and visualize
-    positions = embedder.get_positions()
-    embedder.display_layout()
-
-Contents
---------
+The package validates graph invariants, spectral residuals, orthogonality,
+midpoint identities, and finite layout state.  A failed check raises an error
+rather than selecting another solver or algorithm.
 
 .. toctree::
    :maxdepth: 2
+   :caption: User guide
 
    quickstart
    api
-   backends
    generators
-   examples
-
-Citation
---------
-
-.. code-block:: bibtex
-
-    @misc{kolpakov-rivin-2025fast,
-      title={Fast Geometric Embedding for Node Influence Maximization},
-      author={Kolpakov, Alexander and Rivin, Igor},
-      year={2025},
-      eprint={2506.07435},
-      archivePrefix={arXiv},
-      primaryClass={cs.SI},
-      url={https://arxiv.org/abs/2506.07435}
-    }
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

@@ -1,121 +1,85 @@
-Quick Start Guide
-=================
+Quick start
+===========
 
-Installation
+Requirements
 ------------
 
-Basic Installation::
+The canonical qualified environment uses Python 3.11, CUDA 12.9, Torch 2.11,
+CuPy 14.1.1, and cuVS 26.06.  Install the CUDA-matched Torch wheel before the
+package:
 
-    pip install graphem-rapids
+.. code-block:: console
 
-With CUDA support::
+   $ python3.11 -m venv .venv
+   $ source .venv/bin/activate
+   $ python -m pip install --upgrade pip
+   $ python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
+   $ python -m pip install -e .
 
-    pip install graphem-rapids[cuda]
-
-With RAPIDS cuVS::
-
-    pip install graphem-rapids[rapids]
-
-All features::
-
-    pip install graphem-rapids[all]
-
-Basic Usage
------------
-
-Generate and Embed a Graph
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    import graphem_rapids as gr
-
-    # Generate graph (returns sparse adjacency matrix)
-    adjacency = gr.generate_er(n=1000, p=0.01, seed=42)
-
-    # Create embedder with automatic backend selection
-    embedder = gr.create_graphem(adjacency, n_components=3)
-
-    # Run force-directed layout
-    embedder.run_layout(num_iterations=50)
-
-    # Get positions (numpy array)
-    positions = embedder.get_positions()  # shape: (n_vertices, n_components)
-
-    # Visualize (2D or 3D)
-    embedder.display_layout()
-
-Backend Selection
------------------
-
-Automatic (Recommended)
-~~~~~~~~~~~~~~~~~~~~~~~
-
-::
-
-    embedder = gr.create_graphem(adjacency, n_components=3)
-
-PyTorch Backend
-~~~~~~~~~~~~~~~
-
-Best for 1K-100K vertices::
-
-    embedder = gr.GraphEmbedderPyTorch(
-        adjacency, n_components=3, device='cuda',
-        L_min=1.0, k_attr=0.2, k_inter=0.5,
-        n_neighbors=10, batch_size=None
-    )
-
-RAPIDS cuVS Backend
-~~~~~~~~~~~~~~~~~~~
-
-Best for 100K+ vertices::
-
-    embedder = gr.GraphEmbedderCuVS(
-        adjacency, n_components=3,
-        index_type='auto',  # 'brute_force', 'ivf_flat', 'ivf_pq'
-        sample_size=1024, batch_size=None
-    )
-
-**Index Types:**
-  * ``brute_force``: <100K vertices (exact KNN)
-  * ``ivf_flat``: 100K-1M vertices (good balance)
-  * ``ivf_pq``: >1M vertices (memory-efficient)
-
-Configuration
+Device policy
 -------------
 
-Environment Variables
-~~~~~~~~~~~~~~~~~~~~~
+Production and benchmark runs pin ``device="cuda"``.  An explicit CUDA request
+fails if Torch CUDA is unavailable and never downgrades.  ``device="cpu"`` and
+an automatic CPU selection use the same Torch spectral tensor function, emit a
+``RuntimeWarning``, and record the selection reason.  They are small-fixture
+spectral diagnostics only: midpoint search and force refinement still require
+CuPy, cupyx, cuVS, and CUDA.
 
-::
+Adjacency input
+---------------
 
-    export GRAPHEM_BACKEND=pytorch        # Force specific backend
-    export GRAPHEM_PREFER_GPU=true        # Prefer GPU backends
-    export GRAPHEM_MEMORY_LIMIT=8         # Memory limit in GB
-    export GRAPHEM_VERBOSE=true           # Enable verbose logging
+.. code-block:: python
 
-Programmatic Configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+   import graphem_rapids as gr
 
-::
+   adjacency = gr.generate_er(n=1_000, p=0.1, seed=0)
+   embedder = gr.GraphEmbedder(
+       adjacency=adjacency,
+       n_components=3,
+       L_min=40.0,
+       k_attr=1.0,
+       k_inter=1.0,
+       n_neighbors=15,
+       sample_size=2_048,
+       seed=0,
+       device="cuda",
+   )
+   embedder.run_layout(num_iterations=30)
 
-    from graphem_rapids.utils.backend_selection import BackendConfig, get_optimal_backend
+   positions = embedder.get_positions()
+   scores = embedder.get_scores()
+   farthest = embedder.get_top_k(50)
+   diagnostics = embedder.get_diagnostics()
 
-    config = BackendConfig(
-        n_vertices=50000,
-        force_backend='cuvs',
-        memory_limit=16.0,
-        prefer_gpu=True
-    )
-    backend = get_optimal_backend(config)
-    embedder = gr.create_graphem(adjacency, backend=backend)
+Edge-list input
+---------------
 
-Check Available Backends
-~~~~~~~~~~~~~~~~~~~~~~~~
+Supply exactly one of ``adjacency`` and ``edges``.  An edge list also requires
+the total vertex count:
 
-::
+.. code-block:: python
 
-    info = gr.get_backend_info()
-    print(f"CUDA: {info['cuda_available']}")
-    print(f"Recommended: {info['recommended_backend']}")
+   embedder = gr.GraphEmbedder(
+       edges=edge_array,
+       n_vertices=vertex_count,
+       n_components=3,
+       n_neighbors=15,
+       sample_size=2_048,
+       device="cuda",
+   )
+
+Edges must contain integer vertex IDs in ``[0, n_vertices)`` and must not
+contain loops or duplicate undirected pairs.  For both input forms,
+``sample_size`` cannot exceed the edge count and ``n_neighbors`` must be
+strictly smaller than the edge count.  Spectral initialization additionally
+requires ``n_vertices >= 3 * (n_components + 1)``.
+
+Failure and diagnostics
+-----------------------
+
+Construction fails on a missing GPU dependency, invalid graph, unavailable
+requested CUDA device, nonconverged spectral solve, or failed numerical gate.
+``get_diagnostics()`` records the requested and selected spectral devices,
+solver protocol, eigenvalues, residual, query-edge hashes, midpoint-search
+receipts, iteration count, and primitive timings.

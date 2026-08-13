@@ -1,62 +1,63 @@
-# Contributing to GraphEm Rapids
+# Contributing to GraphEm RAPIDS
 
-Thank you for your interest in contributing to GraphEm Rapids!
+Thank you for contributing to GraphEm RAPIDS. Keep changes focused and preserve
+the canonical algorithm and its fail-closed diagnostics.
 
-## Quick Start
+## Development environment
 
-1. **Fork & Clone**
+1. Fork and clone the repository.
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/graphem-rapids.git
    cd graphem-rapids
    ```
 
-2. **Setup Development Environment**
+2. Create a Python 3.11 environment and install the CUDA-matched Torch wheel
+   before the editable package.
+
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   pip install -e ".[test,docs]"
+   python3.11 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install --upgrade pip
+   python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu129
+   python -m pip install -e ".[test,docs]"
    ```
 
-3. **Run Tests**
+3. Run the local checks that apply to the change.
+
    ```bash
-   pytest tests/ -v
-   python examples/example_usage.py  # Test examples work
+   python -m pytest -q
+   python -m pylint graphem_rapids tests
+   python -m py_compile graphem_rapids/embedder.py
+   sphinx-build -W --keep-going -n -b html docs /tmp/graphem-docs
+   npx --yes markdownlint-cli2@0.23.2 "*.md"
    ```
 
-## Development Guidelines
+Documentation-only CI installs the pinned CPU Torch wheel and the package with
+`--no-deps` solely so autodoc can import the shared tensor API. That environment
+does not qualify or execute the CUDA layout.
 
-### Code Style
-- Follow **PEP 8**
-- Add **type hints** to all public functions
-- Use **NumPy-style docstrings**
-- Test your changes with `pytest tests/`
+## Development guidelines
 
-### Making Changes
-- Create a feature branch: `git checkout -b feature/your-feature`
-- Make focused commits with clear messages
-- Add tests for new functionality
-- Update documentation if needed
+- Follow PEP 8 and add type hints to public functions.
+- Use NumPy-style docstrings.
+- Add focused tests for new behavior and failure paths.
+- Do not add a second spectral solver, layout engine, score orientation, or
+  silent CUDA downgrade.
+- Keep production and benchmark examples pinned to `device="cuda"`.
+- Update the documentation and changelog when the public contract changes.
 
-### Pull Request Checklist
-- [ ] Code follows style guidelines
-- [ ] Tests pass locally
-- [ ] Documentation updated (if needed)
-- [ ] Examples still work
-- [ ] Clear PR description with what/why/how
+## Pull request checklist
 
-## Need Help?
+- [ ] The change is focused and the public behavior is explained.
+- [ ] Fast tests pass locally.
+- [ ] GPU-dependent claims have a separately identified GPU qualification.
+- [ ] Sphinx builds with warnings treated as errors.
+- [ ] Markdown lint and link checks pass.
+- [ ] Examples use the current canonical API.
+- [ ] Numerical-source changes include targeted correctness tests.
 
-- **Report bugs**: [GitHub Issues](https://github.com/sashakolpakov/graphem-rapids/issues)
-- **Suggest features**: [GitHub Discussions](https://github.com/sashakolpakov/graphem-rapids/discussions)
+## Getting help
 
-## Types of Contributions
-
-- **Bug fixes** - Always welcome!
-- **New graph generators** - Expand the collection
-- **Performance improvements** - PyTorch/RAPIDS optimization
-- **Backend enhancements** - cuVS integration, memory management
-- **Documentation** - Examples, tutorials, API docs
-- **Tests** - Improve coverage and reliability
-
----
-**Questions?** Open an issue or start a discussion.
+Report bugs and propose enhancements through
+[GitHub Issues](https://github.com/sashakolpakov/graphem-rapids/issues).
